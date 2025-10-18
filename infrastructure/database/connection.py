@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Optional
 import asyncio
-from ...shared.config.settings import Settings
+from shared.config.settings import Settings
 
 # SQLAlchemy Base
 Base = declarative_base()
@@ -37,6 +37,7 @@ class DatabaseConnection:
                 f"{self.settings.mysql_port}/{self.settings.mysql_database}"
             )
         elif db_type == "sqlserver":
+            # For async operations, we'll handle this differently in the factory
             return (
                 f"mssql+pyodbc://{self.settings.sqlserver_username}:"
                 f"{self.settings.sqlserver_password}@{self.settings.sqlserver_host}:"
@@ -61,6 +62,10 @@ class DatabaseConnection:
         """Get or create SQL engine."""
         if self._sql_engine is None:
             connection_string = self.get_sql_connection_string()
+            # Skip async engine for SQL Server as it doesn't support async drivers
+            if self.settings.database_type.lower() == "sqlserver":
+                return None  # SQL Server uses sync operations in repository
+            
             self._sql_engine = create_async_engine(
                 connection_string,
                 echo=self.settings.debug,
@@ -73,6 +78,10 @@ class DatabaseConnection:
     
     async def get_sql_session(self) -> AsyncSession:
         """Get SQL database session."""
+        # SQL Server doesn't support async sessions
+        if self.settings.database_type.lower() == "sqlserver":
+            return None  # SQL Server uses sync sessions in repository
+            
         if self._async_session is None:
             engine = await self.get_sql_engine()
             self._async_session = sessionmaker(

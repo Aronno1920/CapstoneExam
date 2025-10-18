@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
     # Database Configuration
-    database_type: str = "postgresql"
+    database_type: str = "postgresql"  # Default fallback
     
     # SQL Server Configuration
     sqlserver_host: str = "localhost"
@@ -42,9 +42,11 @@ class Settings(BaseSettings):
     app_version: str = "1.0.0"
     debug: bool = True
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": False,
+        "extra": "ignore"
+    }
 
 
 # Global settings instance

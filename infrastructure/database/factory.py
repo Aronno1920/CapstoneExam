@@ -1,6 +1,7 @@
-from ...domain.repositories.question_repository import QuestionRepositoryInterface
-from ...shared.config.settings import Settings
+from domain.repositories.question_repository import QuestionRepositoryInterface
+from shared.config.settings import Settings
 from ..repositories.sql_question_repository import SQLQuestionRepository
+from ..repositories.sqlserver_question_repository import SQLServerQuestionRepository
 from ..repositories.mongo_question_repository import MongoQuestionRepository
 from .connection import get_database_connection
 
@@ -16,9 +17,14 @@ class RepositoryFactory:
         """Create and return a question repository based on database type."""
         db_type = self.settings.database_type.lower()
         
-        if db_type in ["postgresql", "mysql", "sqlserver"]:
+        if db_type in ["postgresql", "mysql"]:
             session = await self.db_connection.get_sql_session()
             return SQLQuestionRepository(session)
+        
+        elif db_type == "sqlserver":
+            # Use hybrid sync/async repository for SQL Server
+            connection_string = self.db_connection.get_sql_connection_string()
+            return SQLServerQuestionRepository(connection_string)
         
         elif db_type == "mongodb":
             database = await self.db_connection.get_mongo_database()

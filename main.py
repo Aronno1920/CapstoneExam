@@ -19,10 +19,19 @@ async def lifespan(app: FastAPI):
     # Initialize database connections
     if db_connection.is_sql_database():
         try:
-            engine = await db_connection.get_sql_engine()
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-            print(f"✅ Connected to {settings.database_type} database successfully")
+            if settings.database_type.lower() == "sqlserver":
+                # Handle SQL Server with sync operations
+                from sqlalchemy import create_engine
+                connection_string = db_connection.get_sql_connection_string()
+                sync_engine = create_engine(connection_string, echo=settings.debug)
+                Base.metadata.create_all(sync_engine)
+                print(f"✅ Connected to {settings.database_type} database successfully (sync mode)")
+            else:
+                # Handle PostgreSQL/MySQL with async operations
+                engine = await db_connection.get_sql_engine()
+                async with engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+                print(f"✅ Connected to {settings.database_type} database successfully")
         except Exception as e:
             print(f"❌ Failed to connect to {settings.database_type} database: {e}")
     
@@ -116,3 +125,6 @@ if __name__ == "__main__":
         port=8000,
         reload=settings.debug
     )
+    
+    
+# uvicorn main:app --reload --host 127.0.0.1 --port 8000

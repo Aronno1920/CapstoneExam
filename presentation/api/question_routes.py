@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from typing import List, Optional
-from ...domain.entities.question import Question
-from ...domain.use_cases.question_use_cases import QuestionUseCases
+from domain.entities.question import Question
+from domain.use_cases.question_use_cases import QuestionUseCases
 from ..schemas.question_schemas import (
     QuestionCreate, QuestionUpdate, QuestionResponse, 
     QuestionList, QuestionSearch, MessageResponse, ErrorResponse

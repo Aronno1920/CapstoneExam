@@ -1,8 +1,8 @@
 from typing import List, Optional
 from sqlalchemy import select, update, delete, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from ...domain.entities.question import Question
-from ...domain.repositories.question_repository import QuestionRepositoryInterface
+from domain.entities.question import Question
+from domain.repositories.question_repository import QuestionRepositoryInterface
 from ..database.models import QuestionModel
 from datetime import datetime
 

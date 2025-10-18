@@ -8,8 +8,14 @@ python-dotenv==1.0.0
 sqlalchemy==2.0.23
 alembic==1.12.1
 psycopg2-binary==2.9.9  # PostgreSQL
-pymysql==1.1.0          # MySQL
-pyodbc==5.0.1           # SQL Server
+aiomysql==0.2.0         # MySQL async
+mysqlclient==2.2.0       # MySQL connector
+aiopg==1.4.0            # PostgreSQL async alternative
+aiosql==4.4.0           # SQL utilities
+
+# SQL Server async support
+pyodbc==5.0.1           # SQL Server (sync fallback)
+aiofiles==23.2.1        # For file operations
 
 # MongoDB
 motor==3.3.2

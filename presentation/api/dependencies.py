@@ -1,8 +1,8 @@
 from fastapi import Depends
-from ...shared.config.settings import get_settings, Settings
-from ...infrastructure.database.factory import get_repository_factory, RepositoryFactory
-from ...domain.use_cases.question_use_cases import QuestionUseCases
-from ...domain.repositories.question_repository import QuestionRepositoryInterface
+from shared.config.settings import get_settings, Settings
+from infrastructure.database.factory import get_repository_factory, RepositoryFactory
+from domain.use_cases.question_use_cases import QuestionUseCases
+from domain.repositories.question_repository import QuestionRepositoryInterface
 
 
 async def get_question_repository(

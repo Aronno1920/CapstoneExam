@@ -3,8 +3,8 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 from datetime import datetime
 import re
-from ...domain.entities.question import Question
-from ...domain.repositories.question_repository import QuestionRepositoryInterface
+from domain.entities.question import Question
+from domain.repositories.question_repository import QuestionRepositoryInterface
 
 
 class MongoQuestionRepository(QuestionRepositoryInterface):
