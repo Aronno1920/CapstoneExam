@@ -12,7 +12,12 @@ class Settings(BaseSettings):
     
     # LLM Configuration
     openai_api_key: Optional[str] = Field(None, env="OPENAI_API_KEY")
-    anthropic_api_key: Optional[str] = Field(None, env="ANTHROPIC_API_KEY")
+    
+    # GitHub Models Configuration
+    github_token: Optional[str] = Field(None, env="GITHUB_TOKEN")
+    github_endpoint: str = Field("https://models.github.ai/inference", env="GITHUB_ENDPOINT")
+    github_model: str = Field("openai/gpt-4.1-nano", env="GITHUB_MODEL")
+    
     llm_provider: str = Field("openai", env="LLM_PROVIDER")
     llm_model: str = Field("gpt-4", env="LLM_MODEL")
     
@@ -22,7 +27,7 @@ class Settings(BaseSettings):
     db_port: str = Field("1433", env="DB_PORT")
     db_name: str = Field("AIExaminerDB", env="DB_NAME")
     db_username: str = Field("sa", env="DB_USERNAME")
-    db_password: str = Field("password", env="DB_PASSWORD")
+    db_password: str = Field("abc@123", env="DB_PASSWORD")
     db_driver: str = Field("ODBC Driver 17 for SQL Server", env="DB_DRIVER")
     use_windows_auth: bool = Field(True, env="USE_WINDOWS_AUTH")
     
@@ -276,17 +281,24 @@ LLM_CONFIGS = {
         "temperature": 0.2,
         "supports_json_mode": True
     },
-    "claude-3-opus-20240229": {
-        "provider": "anthropic",
+    # GitHub Models
+    "openai/gpt-4.1-nano": {
+        "provider": "github",
         "max_tokens": 4000,
         "temperature": 0.2,
-        "supports_json_mode": False
+        "supports_json_mode": True
     },
-    "claude-3-sonnet-20240229": {
-        "provider": "anthropic",
+    "openai/gpt-4o": {
+        "provider": "github",
         "max_tokens": 4000,
         "temperature": 0.2,
-        "supports_json_mode": False
+        "supports_json_mode": True
+    },
+    "openai/gpt-4o-mini": {
+        "provider": "github",
+        "max_tokens": 4000,
+        "temperature": 0.2,
+        "supports_json_mode": True
     }
 }
 
@@ -300,13 +312,13 @@ def validate_api_keys() -> dict:
     """Validate that required API keys are available"""
     validation_result = {
         "openai": bool(settings.openai_api_key),
-        "anthropic": bool(settings.anthropic_api_key),
+        "github": bool(settings.github_token),
         "selected_provider_valid": False
     }
     
     if settings.llm_provider == "openai":
         validation_result["selected_provider_valid"] = validation_result["openai"]
-    elif settings.llm_provider == "anthropic":
-        validation_result["selected_provider_valid"] = validation_result["anthropic"]
+    elif settings.llm_provider == "github":
+        validation_result["selected_provider_valid"] = validation_result["github"]
     
     return validation_result

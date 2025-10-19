@@ -1,6 +1,6 @@
 """
 LLM Service for AI Examiner System
-Handles interactions with different LLM providers (OpenAI, Anthropic)
+Handles interactions with LLM providers (OpenAI, GitHub Models)
 """
 import json
 import time
@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 import openai
-from anthropic import Anthropic, APIError as AnthropicAPIError
+import httpx
 from openai import OpenAI, APIError as OpenAIAPIError
 
 from ..utils.config import settings, get_llm_config, PromptTemplates
@@ -114,17 +114,23 @@ class OpenAIProvider(BaseLLMProvider):
             return False
 
 
-class AnthropicProvider(BaseLLMProvider):
-    """Anthropic Claude LLM provider implementation"""
+class GitHubModelsProvider(BaseLLMProvider):
+    """GitHub Models LLM provider implementation using OpenAI client"""
     
-    def __init__(self, api_key: str, model: str):
-        super().__init__(api_key, model)
-        self.client = Anthropic(api_key=api_key)
+    def __init__(self, github_token: str, model: str, endpoint: str = "https://models.inference.ai.azure.com"):
+        super().__init__(github_token, model)
+        self.github_token = github_token
+        self.endpoint = endpoint
+        # Use OpenAI client with custom base URL for GitHub Models
+        self.client = OpenAI(
+            api_key=github_token,
+            base_url=endpoint
+        )
     
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(AnthropicAPIError)
+        retry=retry_if_exception_type(OpenAIAPIError)
     )
     async def generate_response(
         self, 
@@ -133,40 +139,43 @@ class AnthropicProvider(BaseLLMProvider):
         max_tokens: Optional[int] = None,
         json_mode: bool = False
     ) -> str:
-        """Generate response from Anthropic API"""
+        """Generate response from GitHub Models API using OpenAI client"""
         try:
-            # Add JSON instruction to prompt if JSON mode requested
-            if json_mode:
-                prompt += "\n\nIMPORTANT: Respond with valid JSON only, no additional text."
+            messages = [{"role": "user", "content": prompt}]
             
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=max_tokens or self.config["max_tokens"],
-                temperature=temperature or self.config["temperature"],
-                messages=[{"role": "user", "content": prompt}]
-            )
+            kwargs = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": temperature or self.config["temperature"],
+                "max_tokens": max_tokens or self.config["max_tokens"]
+            }
             
-            return response.content[0].text
+            # Add JSON mode if supported and requested
+            if json_mode and self.config.get("supports_json_mode", False):
+                kwargs["response_format"] = {"type": "json_object"}
             
-        except AnthropicAPIError as e:
-            logger.error(f"Anthropic API error: {e}")
-            raise LLMProviderError(f"Anthropic API error: {e}")
+            response = self.client.chat.completions.create(**kwargs)
+            return response.choices[0].message.content
+                
+        except OpenAIAPIError as e:
+            logger.error(f"GitHub Models API error: {e}")
+            raise LLMProviderError(f"GitHub Models API error: {e}")
         except Exception as e:
-            logger.error(f"Unexpected error in Anthropic provider: {e}")
+            logger.error(f"Unexpected error in GitHub Models provider: {e}")
             raise LLMError(f"Unexpected error: {e}")
     
     def validate_connection(self) -> bool:
-        """Validate Anthropic connection"""
+        """Validate GitHub Models connection"""
         try:
-            # Simple test message to validate connection
-            self.client.messages.create(
+            # Simple test using the OpenAI client
+            self.client.chat.completions.create(
                 model=self.model,
-                max_tokens=10,
-                messages=[{"role": "user", "content": "Hello"}]
+                messages=[{"role": "user", "content": "Hello"}],
+                max_tokens=10
             )
             return True
         except Exception as e:
-            logger.error(f"Anthropic connection validation failed: {e}")
+            logger.error(f"GitHub Models connection validation failed: {e}")
             return False
 
 
@@ -185,10 +194,14 @@ class LLMService:
                     raise LLMError("OpenAI API key not configured")
                 self.provider = OpenAIProvider(settings.openai_api_key, settings.llm_model)
             
-            elif settings.llm_provider == LLMProvider.ANTHROPIC:
-                if not settings.anthropic_api_key:
-                    raise LLMError("Anthropic API key not configured")
-                self.provider = AnthropicProvider(settings.anthropic_api_key, settings.llm_model)
+            elif settings.llm_provider == "github":
+                if not settings.github_token:
+                    raise LLMError("GitHub token not configured")
+                self.provider = GitHubModelsProvider(
+                    github_token=settings.github_token,
+                    model=settings.llm_model,
+                    endpoint=settings.github_endpoint
+                )
             
             else:
                 raise LLMError(f"Unsupported LLM provider: {settings.llm_provider}")
@@ -342,12 +355,26 @@ class LLMService:
     
     def get_provider_info(self) -> Dict[str, Any]:
         """Get information about the current provider and model"""
-        return {
+        provider_info = {
             "provider": settings.llm_provider,
             "model": settings.llm_model,
             "config": get_llm_config(settings.llm_model),
             "connected": self.validate_connection() if self.provider else False
         }
+        
+        # Add provider-specific information
+        if settings.llm_provider == "github":
+            provider_info.update({
+                "endpoint": settings.github_endpoint,
+                "github_model": settings.github_model,
+                "token_configured": bool(settings.github_token)
+            })
+        elif settings.llm_provider == "openai":
+            provider_info.update({
+                "api_key_configured": bool(settings.openai_api_key)
+            })
+        
+        return provider_info
 
 
 # Global LLM service instance

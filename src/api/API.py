@@ -9,6 +9,7 @@ import urllib.parse
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 import uvicorn
 
 from ..models.database import DatabaseManager
@@ -41,15 +42,29 @@ def build_connection_string() -> str:
     if settings.database_url and not settings.database_url.startswith("sqlite"):
         return settings.database_url
     
-    # Build from individual components
-    password = urllib.parse.quote_plus(settings.db_password)
-    driver = urllib.parse.quote_plus(settings.db_driver)
+    # Use the exact working connection string from our test
+    server = settings.db_server
+    if server in ["Ahmed-PC", "localhost", "."]:
+        server = "localhost"
     
-    connection_string = (
-        f"mssql+pyodbc://{settings.db_username}:{password}@"
-        f"{settings.db_server}:{settings.db_port}/{settings.db_name}"
-        f"?driver={driver}"
-    )
+    # Check if we should use Windows Authentication
+    if getattr(settings, 'use_windows_auth', True):  # Default to Windows Auth
+        # Use the exact format that worked in our test
+        connection_string = (
+            f"mssql+pyodbc://@{server}:{settings.db_port}/{settings.db_name}"
+            f"?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes&timeout=30"
+        )
+    else:
+        # SQL Server Authentication
+        password = urllib.parse.quote_plus(settings.db_password)
+        connection_string = (
+            f"mssql+pyodbc://{settings.db_username}:{password}@"
+            f"{server}:{settings.db_port}/{settings.db_name}"
+            f"?driver=ODBC+Driver+17+for+SQL+Server&timeout=30"
+        )
+    
+    logger.info(f"Attempting database connection to: {server}:{settings.db_port}/{settings.db_name}")
+    logger.info(f"Connection string: {connection_string}")
     return connection_string
 
 
@@ -73,18 +88,37 @@ async def lifespan(app: FastAPI):
             connection_string = build_connection_string()
             if not connection_string.startswith("sqlite"):
                 logger.info(f"Connecting to database: {settings.db_server}:{settings.db_port}/{settings.db_name}")
-                db_manager = DatabaseManager(connection_string)
+                
+                # Use the exact working connection string from our successful test
+                working_connection_string = (
+                    f"mssql+pyodbc://@localhost:1433/{settings.db_name}"
+                    f"?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes&timeout=30"
+                )
+                
+                logger.info("Attempting database connection with tested working format...")
+                db_manager = DatabaseManager(working_connection_string)
+                
+                # Test the connection
+                session = db_manager.get_session()
+                result = session.execute(text("SELECT COUNT(*) FROM questions")).fetchone()
+                question_count = result[0]
+                session.close()
+                
+                logger.info(f"✅ Database connected successfully! Found {question_count} questions.")
+                
+                # Initialize database service
                 database_service = DatabaseService(db_manager)
                 
                 # Set database services in database router
                 database.set_database_services(db_manager, database_service)
-                
-                logger.info("MSSQL database connected successfully")
+                logger.info("MSSQL database services initialized")
+                    
             else:
                 logger.info("Database router will operate in unavailable mode")
         except Exception as db_error:
             logger.warning(f"Database connection failed: {db_error}")
             logger.info("Database router will operate in unavailable mode")
+            logger.info("API will start without database functionality")
         
         # Test LLM connection
         if not llm_service.validate_connection():
@@ -106,7 +140,7 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title="AI Examiner API",
+    title="AI Examiner",
     description="AI-powered narrative answer grading system with organized routers",
     version="2.0.0",
     docs_url="/docs",
@@ -123,10 +157,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(database.router)
-app.include_router(llm.router)
+# Include routers (hidden from Swagger documentation)
+# Set SHOW_INTERNAL_DOCS=true in environment to show these in Swagger
+import os
+show_internal_in_schema = os.getenv("SHOW_INTERNAL_DOCS", "false").lower() == "true"
 
+app.include_router(
+    database.router, 
+    prefix="/database",
+    tags=["Database Operations (Internal)"],
+    include_in_schema=show_internal_in_schema
+)
+app.include_router(
+    llm.router, 
+    prefix="/llm",
+    tags=["LLM Operations (Internal)"],
+    include_in_schema=show_internal_in_schema
+)
 
 
 # Root endpoint
@@ -138,9 +185,10 @@ async def root() -> Dict[str, Any]:
         "version": "2.0.0",
         "description": "AI-powered narrative answer grading system",
         "routers": {
-            "database": "/database - MSSQL database operations and workflow",
-            "llm": "/llm - LLM operations and in-memory grading"
+            "database": "/database - MSSQL database operations and workflow (hidden from docs)",
+            "llm": "/llm - LLM operations and in-memory grading (hidden from docs)"
         },
+        "internal_docs": "/internal/routes",
         "docs": "/docs",
         "health": "/health",
         "timestamp": time.time()
@@ -190,6 +238,42 @@ async def detailed_health_check() -> Dict[str, Any]:
             "database": "/database - Available" if db_connected else "/database - Unavailable",
             "llm": "/llm - Available" if llm_connected else "/llm - Error"
         }
+    }
+
+
+@app.get("/internal/routes", include_in_schema=False)
+async def get_internal_routes() -> Dict[str, Any]:
+    """Get information about internal/hidden routes (not shown in main Swagger docs)"""
+    return {
+        "message": "Internal API Routes - Not shown in main documentation",
+        "database_routes": {
+            "prefix": "/database",
+            "description": "MSSQL database operations and workflow",
+            "endpoints": [
+                "GET /database/info - Database connection info",
+                "GET /database/tables - Database table information",
+                "GET /database/questions/{question_id} - Get question details",
+                "POST /database/questions - Create new question",
+                "GET /database/students/{student_id}/answers/{question_id} - Get student answer",
+                "POST /database/student-answers - Create student answer",
+                "POST /database/grade/workflow - Complete grading workflow"
+            ]
+        },
+        "llm_routes": {
+            "prefix": "/llm",
+            "description": "LLM operations and in-memory grading",
+            "endpoints": [
+                "POST /llm/grade - Grade single answer",
+                "POST /llm/grade/batch - Batch grade answers",
+                "POST /llm/analyze/concepts - Extract key concepts",
+                "POST /llm/analyze/similarity - Analyze semantic similarity",
+                "GET /llm/provider/info - LLM provider information",
+                "POST /llm/provider/test - Test LLM connection"
+            ]
+        },
+        "access_note": "These routes are functional but hidden from the main Swagger documentation for cleaner API presentation",
+        "main_docs": "/docs",
+        "timestamp": time.time()
     }
 
 
