@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     db_username: str = Field("sa", env="DB_USERNAME")
     db_password: str = Field("password", env="DB_PASSWORD")
     db_driver: str = Field("ODBC Driver 17 for SQL Server", env="DB_DRIVER")
+    use_windows_auth: bool = Field(True, env="USE_WINDOWS_AUTH")
     
     # Application Settings
     debug: bool = Field(False, env="DEBUG")
@@ -46,6 +47,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False
+        extra = "ignore"  # Allow extra fields in environment
 
 
 # Global settings instance
