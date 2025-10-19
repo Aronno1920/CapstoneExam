@@ -1,6 +1,6 @@
 """
 LLM Service for AI Examiner System
-Handles interactions with LLM providers (OpenAI, GitHub Models)
+Handles interactions with GitHub Models LLM provider
 """
 import json
 import time
@@ -58,60 +58,6 @@ class BaseLLMProvider(ABC):
     def validate_connection(self) -> bool:
         """Validate that the LLM connection is working"""
         pass
-
-
-class OpenAIProvider(BaseLLMProvider):
-    """OpenAI LLM provider implementation"""
-    
-    def __init__(self, api_key: str, model: str):
-        super().__init__(api_key, model)
-        self.client = OpenAI(api_key=api_key)
-    
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(OpenAIAPIError)
-    )
-    async def generate_response(
-        self, 
-        prompt: str, 
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        json_mode: bool = False
-    ) -> str:
-        """Generate response from OpenAI API"""
-        try:
-            messages = [{"role": "user", "content": prompt}]
-            
-            kwargs = {
-                "model": self.model,
-                "messages": messages,
-                "temperature": temperature or self.config["temperature"],
-                "max_tokens": max_tokens or self.config["max_tokens"]
-            }
-            
-            # Add JSON mode if supported and requested
-            if json_mode and self.config.get("supports_json_mode", False):
-                kwargs["response_format"] = {"type": "json_object"}
-            
-            response = self.client.chat.completions.create(**kwargs)
-            return response.choices[0].message.content
-            
-        except OpenAIAPIError as e:
-            logger.error(f"OpenAI API error: {e}")
-            raise LLMProviderError(f"OpenAI API error: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error in OpenAI provider: {e}")
-            raise LLMError(f"Unexpected error: {e}")
-    
-    def validate_connection(self) -> bool:
-        """Validate OpenAI connection"""
-        try:
-            self.client.models.list()
-            return True
-        except Exception as e:
-            logger.error(f"OpenAI connection validation failed: {e}")
-            return False
 
 
 class GitHubModelsProvider(BaseLLMProvider):
@@ -189,12 +135,7 @@ class LLMService:
     def initialize_provider(self) -> None:
         """Initialize the appropriate LLM provider based on settings"""
         try:
-            if settings.llm_provider == LLMProvider.OPENAI:
-                if not settings.openai_api_key:
-                    raise LLMError("OpenAI API key not configured")
-                self.provider = OpenAIProvider(settings.openai_api_key, settings.llm_model)
-            
-            elif settings.llm_provider == "github":
+            if settings.llm_provider == "github":
                 if not settings.github_token:
                     raise LLMError("GitHub token not configured")
                 self.provider = GitHubModelsProvider(
@@ -368,10 +309,6 @@ class LLMService:
                 "endpoint": settings.github_endpoint,
                 "github_model": settings.github_model,
                 "token_configured": bool(settings.github_token)
-            })
-        elif settings.llm_provider == "openai":
-            provider_info.update({
-                "api_key_configured": bool(settings.openai_api_key)
             })
         
         return provider_info

@@ -105,14 +105,11 @@ class GradingResult(BaseModel):
 
 class LLMProvider(str, Enum):
     """Supported LLM providers"""
-    OPENAI = "openai"
     GITHUB = "github"
 
 
 class LLMModel(str, Enum):
     """Supported LLM models"""
-    GPT4 = "gpt-4"
-    GPT35_TURBO = "gpt-3.5-turbo"
     GITHUB_GPT4_NANO = "openai/gpt-4.1-nano"
     GITHUB_GPT4O = "openai/gpt-4o"
     GITHUB_GPT4O_MINI = "openai/gpt-4o-mini"

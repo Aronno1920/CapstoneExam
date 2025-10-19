@@ -11,7 +11,6 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables"""
     
     # LLM Configuration
-    openai_api_key: Optional[str] = Field(None, env="OPENAI_API_KEY")
     
     # GitHub Models Configuration
     github_token: Optional[str] = Field(None, env="GITHUB_TOKEN")
@@ -269,18 +268,6 @@ class PromptTemplates:
 
 # LLM Model configurations
 LLM_CONFIGS = {
-    "gpt-4": {
-        "provider": "openai",
-        "max_tokens": 4000,
-        "temperature": 0.2,
-        "supports_json_mode": True
-    },
-    "gpt-3.5-turbo": {
-        "provider": "openai",
-        "max_tokens": 3000,
-        "temperature": 0.2,
-        "supports_json_mode": True
-    },
     # GitHub Models
     "openai/gpt-4.1-nano": {
         "provider": "github",
@@ -311,14 +298,11 @@ def get_llm_config(model_name: str) -> dict:
 def validate_api_keys() -> dict:
     """Validate that required API keys are available"""
     validation_result = {
-        "openai": bool(settings.openai_api_key),
         "github": bool(settings.github_token),
         "selected_provider_valid": False
     }
     
-    if settings.llm_provider == "openai":
-        validation_result["selected_provider_valid"] = validation_result["openai"]
-    elif settings.llm_provider == "github":
+    if settings.llm_provider == "github":
         validation_result["selected_provider_valid"] = validation_result["github"]
     
     return validation_result
