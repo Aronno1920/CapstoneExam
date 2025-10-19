@@ -267,13 +267,7 @@ class PromptTemplates:
 # LLM Model configurations
 LLM_CONFIGS = {
     # GitHub Models
-    "openai/gpt-4.1-nano": {
-        "provider": "github",
-        "max_tokens": 4000,
-        "temperature": 0.2,
-        "supports_json_mode": True
-    },
-    "openai/gpt-4o": {
+    "openai/gpt-5-nano": {
         "provider": "github",
         "max_tokens": 4000,
         "temperature": 0.2,
@@ -293,7 +287,7 @@ def get_llm_config(model_name: str) -> dict:
     if model_name in LLM_CONFIGS:
         return LLM_CONFIGS[model_name]
     # Fallback to GitHub default model
-    return LLM_CONFIGS["openai/gpt-4.1-nano"]
+    return LLM_CONFIGS["openai/gpt-5-nano"]
 
 
 def validate_api_keys() -> dict:
