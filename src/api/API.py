@@ -21,7 +21,7 @@ from ..services.llm_service import llm_service, LLMError
 from ..utils.config import settings, validate_api_keys
 
 # Import routers
-from .routers import question, grade, llm
+from .routers import grade_api, llm_api, question_api
 
 
 # Configure logging
@@ -109,8 +109,8 @@ async def lifespan(app: FastAPI):
                 question_service = QuestionService(db_manager)
                 
                 # Set database services in question and grade routers
-                question.set_database_services(db_manager, question_service)
-                grade.set_database_services(db_manager, question_service)
+                question_api.set_database_services(db_manager, question_service)
+                grade_api.set_database_services(db_manager, question_service)
                 logger.info("MSSQL question services initialized")
                     
             else:
@@ -158,9 +158,9 @@ app.add_middleware(
 )
 
 # Include routers (use prefixes defined in each router and show in Swagger)
-app.include_router(question.router)
-app.include_router(grade.router)
-app.include_router(llm.router)
+app.include_router(question_api.router)
+app.include_router(grade_api.router)
+app.include_router(llm_api.router)
 
 
 # Root endpoint

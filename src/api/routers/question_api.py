@@ -8,7 +8,7 @@ from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from ...models.question import DatabaseManager, Question, StudentAnswer as DBStudentAnswer
+from ...models import DatabaseManager, Question, StudentAnswer as DBStudentAnswer
 from ...services.question_service import QuestionService
 from ...utils.config import settings
 
