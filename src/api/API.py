@@ -156,23 +156,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers (hidden from Swagger documentation)
-# Set SHOW_INTERNAL_DOCS=true in environment to show these in Swagger
-import os
-show_internal_in_schema = os.getenv("SHOW_INTERNAL_DOCS", "false").lower() == "true"
-
-app.include_router(
-    database.router, 
-    prefix="/database",
-    tags=["Database Operations (Internal)"],
-    include_in_schema=show_internal_in_schema
-)
-app.include_router(
-    llm.router, 
-    prefix="/llm",
-    tags=["LLM Operations (Internal)"],
-    include_in_schema=show_internal_in_schema
-)
+# Include routers (use prefixes defined in each router and show in Swagger)
+app.include_router(database.router)
+app.include_router(llm.router)
 
 
 # Root endpoint
