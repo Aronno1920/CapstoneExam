@@ -10,7 +10,6 @@ import urllib.parse
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
-import uvicorn
 
 from ..models.database import DatabaseManager
 from ..models.schemas import (
@@ -277,11 +276,3 @@ async def get_internal_routes() -> Dict[str, Any]:
     }
 
 
-if __name__ == "__main__":
-    uvicorn.run(
-        "src.api.API:app",
-        host=settings.api_host,
-        port=settings.api_port,
-        reload=settings.api_reload,
-        log_level=settings.log_level.lower()
-    )

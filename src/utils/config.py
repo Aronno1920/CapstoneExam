@@ -9,16 +9,14 @@ from pydantic import Field
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables"""
-    
-    # LLM Configuration
-    
+
     # GitHub Models Configuration
     github_token: Optional[str] = Field(None, env="GITHUB_TOKEN")
     github_endpoint: str = Field("https://models.github.ai/inference", env="GITHUB_ENDPOINT")
     github_model: str = Field("openai/gpt-4.1-nano", env="GITHUB_MODEL")
     
-    llm_provider: str = Field("openai", env="LLM_PROVIDER")
-    llm_model: str = Field("gpt-4", env="LLM_MODEL")
+    llm_provider: str = Field("github", env="LLM_PROVIDER")
+    llm_model: str = Field("openai/gpt-4.1-nano", env="LLM_MODEL")
     
     # Database Configuration
     database_url: str = Field("mssql+pyodbc://username:password@server/database?driver=ODBC+Driver+17+for+SQL+Server", env="DATABASE_URL")
@@ -292,7 +290,10 @@ LLM_CONFIGS = {
 
 def get_llm_config(model_name: str) -> dict:
     """Get configuration for a specific LLM model"""
-    return LLM_CONFIGS.get(model_name, LLM_CONFIGS["gpt-4"])
+    if model_name in LLM_CONFIGS:
+        return LLM_CONFIGS[model_name]
+    # Fallback to GitHub default model
+    return LLM_CONFIGS["openai/gpt-4.1-nano"]
 
 
 def validate_api_keys() -> dict:
