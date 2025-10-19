@@ -21,7 +21,7 @@ from ..services.llm_service import llm_service, LLMError
 from ..utils.config import settings, validate_api_keys
 
 # Import routers
-from .routers import database, llm
+from .routers import database, grade, llm
 
 
 # Configure logging
@@ -158,6 +158,7 @@ app.add_middleware(
 
 # Include routers (use prefixes defined in each router and show in Swagger)
 app.include_router(database.router)
+app.include_router(grade.router)
 app.include_router(llm.router)
 
 

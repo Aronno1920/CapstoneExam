@@ -102,7 +102,6 @@ async def batch_grade_answers(request: BatchGradingRequest) -> BatchGradingRespo
 
 
 # LLM Analysis Endpoints
-
 @router.post("/analyze/concepts")
 async def extract_key_concepts(ideal_answer: IdealAnswer) -> Dict[str, Any]:
     """
@@ -199,12 +198,10 @@ async def analyze_semantic_similarity(
 
 
 # LLM Provider Management
-
 @router.get("/provider/info")
 async def get_provider_info() -> Dict[str, Any]:
     """Get information about the current LLM provider and configuration"""
     return llm_service.get_provider_info()
-
 
 @router.post("/provider/test")
 async def test_provider_connection() -> Dict[str, Any]:
@@ -258,7 +255,6 @@ async def llm_health_check() -> Dict[str, Any]:
 
 
 # Example Endpoints for Testing
-
 @router.get("/examples/rubric")
 async def get_example_rubric() -> Dict[str, Any]:
     """Get an example grading rubric for testing LLM operations"""
