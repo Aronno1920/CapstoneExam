@@ -1,5 +1,5 @@
 """
-Database Service for MSSQL Server Operations
+Question Service for MSSQL Server Operations
 Handles the specific workflow: retrieve ideal answer -> extract concepts -> retrieve student answer -> grade and save
 """
 import json
@@ -9,7 +9,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
-from ..models.database import (
+from ..models.question import (
     Question, KeyConcept, RubricCriteria, StudentAnswer, 
     GradingResult, ConceptEvaluation, GradingSession, AuditLog,
     DatabaseManager
@@ -20,8 +20,8 @@ from ..services.llm_service import llm_service
 logger = logging.getLogger(__name__)
 
 
-class DatabaseService:
-    """Database service implementing the required workflow"""
+class QuestionService:
+    """Question service implementing the required workflow"""
     
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
@@ -66,7 +66,7 @@ class DatabaseService:
             ).first()
             
             if question:
-                logger.info(f"Retrieved question {question_id} with {len(question.key_concepts)} key concepts")
+                logger.info(f"Retrieved question {question_id}")
                 
                 # Log audit event
                 self.log_audit_event(
@@ -75,6 +75,64 @@ class DatabaseService:
                 )
             
             return question
+            
+        except SQLAlchemyError as e:
+            logger.error(f"Database error retrieving question {question_id}: {e}")
+            self.log_audit_event(
+                session, "question_retrieval", "question", question_id,
+                {}, "failure", str(e)
+            )
+            return None
+        finally:
+            session.close()
+    
+    def get_question_details(self, question_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get question details with key concepts count (for API responses)
+        
+        Args:
+            question_id: Unique identifier for the question
+            
+        Returns:
+            Dictionary with question details and key concepts count, or None if not found
+        """
+        session = self.get_session()
+        try:
+            question = session.query(Question).filter(
+                Question.question_id == question_id
+            ).first()
+            
+            if not question:
+                return None
+            
+            # Count key concepts while session is active
+            key_concepts_count = session.query(KeyConcept).filter(
+                KeyConcept.question_id == question.id
+            ).count()
+            
+            # Build response dict while session is active
+            result = {
+                "id": question.id,
+                "question_id": question.question_id,
+                "subject": question.subject,
+                "topic": question.topic,
+                "question_text": question.question_text,
+                "ideal_answer": question.ideal_answer,
+                "max_marks": question.max_marks,
+                "passing_threshold": question.passing_threshold,
+                "difficulty_level": question.difficulty_level,
+                "key_concepts_count": key_concepts_count
+            }
+            
+            logger.info(f"Retrieved question {question_id} with {key_concepts_count} key concepts")
+            
+            # Log audit event
+            self.log_audit_event(
+                session, "question_retrieval", "question", question_id,
+                {"max_marks": question.max_marks, "subject": question.subject}
+            )
+            
+            return result
             
         except SQLAlchemyError as e:
             logger.error(f"Database error retrieving question {question_id}: {e}")
@@ -443,8 +501,12 @@ class DatabaseService:
     
     def _format_grading_response(self, grading_result: GradingResult, session: Session) -> Dict[str, Any]:
         """Format existing grading result into the required response format"""
-        # Get concept evaluations
-        concept_evaluations = session.query(ConceptEvaluation).filter(
+        from sqlalchemy.orm import joinedload
+        
+        # Get concept evaluations with eager loading of key_concept
+        concept_evaluations = session.query(ConceptEvaluation).options(
+            joinedload(ConceptEvaluation.key_concept)
+        ).filter(
             ConceptEvaluation.grading_result_id == grading_result.id
         ).all()
         
@@ -541,9 +603,18 @@ class DatabaseService:
         session = self.get_session()
         try:
             # Get question
-            question = session.query(Question).filter(
+            # question = session.query(Question).filter(
+            #     Question.question_id == question_id
+            # ).first()
+            
+            
+            question = session.query(Question).options(
+                joinedload(Question.key_concepts)
+            ).filter(
                 Question.question_id == question_id
             ).first()
+            
+            
             
             if not question:
                 raise ValueError(f"Question {question_id} not found")
@@ -590,5 +661,5 @@ class DatabaseService:
             session.close()
 
 
-# Initialize database service (will be set up in main application)
-database_service: DatabaseService = None
+# Initialize question service (will be set up in main application)
+question_service: QuestionService = None

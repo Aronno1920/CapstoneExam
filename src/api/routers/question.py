@@ -1,6 +1,6 @@
 """
-Database Operations Router
-Handles all MSSQL database-related endpoints and workflow
+Question Operations Router
+Handles all MSSQL question-related endpoints and workflow
 """
 import time
 import logging
@@ -8,29 +8,29 @@ from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from ...models.database import DatabaseManager, Question, StudentAnswer as DBStudentAnswer
-from ...services.database_service import DatabaseService
+from ...models.question import DatabaseManager, Question, StudentAnswer as DBStudentAnswer
+from ...services.question_service import QuestionService
 from ...utils.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Router for database operations
+# Router for question operations
 router = APIRouter(
-    prefix="/database",
-    tags=["Database Operations"],
+    prefix="/question",
+    tags=["Question Operations"],
     responses={404: {"description": "Not found"}},
 )
 
-# Global database components (will be set from main app)
+# Global question service components (will be set from main app)
 db_manager: DatabaseManager = None
-database_service: DatabaseService = None
+question_service: QuestionService = None
 
 
-def set_database_services(db_mgr: DatabaseManager, db_svc: DatabaseService):
-    """Set database services from main application"""
-    global db_manager, database_service
+def set_database_services(db_mgr: DatabaseManager, db_svc: QuestionService):
+    """Set question services from main application"""
+    global db_manager, question_service
     db_manager = db_mgr
-    database_service = db_svc
+    question_service = db_svc
 
 # Request/Response Models
 class CreateQuestionRequest(BaseModel):
@@ -53,14 +53,13 @@ class CreateStudentAnswerRequest(BaseModel):
     language: str = "en"
 
 
-def check_database_service():
-    """Helper to check if database service is available"""
-    if not database_service:
+def check_question_service():
+    """Helper to check if question service is available"""
+    if not question_service:
         raise HTTPException(
             status_code=503, 
-            detail="Database service not available. Please configure MSSQL connection."
+            detail="Question service not available. Please configure MSSQL connection."
         )
-
 
 
 # Database Info and Health Check Endpoints
@@ -80,7 +79,7 @@ async def get_database_info() -> Dict[str, Any]:
 async def database_health_check() -> Dict[str, Any]:
     """Check database connectivity"""
     
-    check_database_service()
+    check_question_service()
     if not db_manager:
         return {
             "status": "not_configured",
@@ -109,47 +108,82 @@ async def database_health_check() -> Dict[str, Any]:
         }
 
 
-# Individual Workflow Steps
 @router.get("/questions/{question_id}")
 async def get_question(question_id: str) -> Dict[str, Any]:
     """Step 1: Retrieve ideal answer and marks for a question"""
-    check_database_service()
+    check_question_service()
     
     try:
-        question = database_service.get_question_with_ideal_answer(question_id)
-        if not question:
+        question_details = question_service.get_question_details(question_id)
+        if not question_details:
             raise HTTPException(status_code=404, detail=f"Question {question_id} not found")
         
-        return {
-            "id": question.id,
-            "question_id": question.question_id,
-            "subject": question.subject,
-            "topic": question.topic,
-            "question_text": question.question_text,
-            "ideal_answer": question.ideal_answer,
-            "max_marks": question.max_marks,
-            "passing_threshold": question.passing_threshold,
-            "difficulty_level": question.difficulty_level,
-            "key_concepts_count": len(question.key_concepts)
-        }
+        return question_details
         
     except Exception as e:
         logger.error(f"Error retrieving question {question_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/students/{student_id}/answers/{question_id}")
+async def get_student_answer(student_id: str, question_id: str) -> Dict[str, Any]:
+    """Step 3: Retrieve student's submitted answer"""
+    check_question_service()
+    
+    try:
+        student_answer = question_service.get_student_answer(student_id, question_id)
+        if not student_answer:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Student answer not found for student {student_id}, question {question_id}"
+            )
+        
+        return {
+            "id": student_answer.id,
+            "answer_id": student_answer.answer_id,
+            "student_id": student_answer.student_id,
+            "question_id": question_id,
+            "answer_text": student_answer.answer_text,
+            "submitted_at": student_answer.submitted_at.isoformat(),
+            "word_count": student_answer.word_count,
+            "language": student_answer.language
+        }
+        
+    except Exception as e:
+        logger.error(f"Error retrieving student answer: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/students/{student_id}/results")
+async def get_student_results(student_id: str) -> Dict[str, Any]:
+    """Get all grading results for a student"""
+    check_question_service()
+    
+    try:
+        results = question_service.get_grading_results_by_student(student_id)
+        return {
+            "student_id": student_id,
+            "results_count": len(results),
+            "results": results
+        }
+        
+    except Exception as e:
+        logger.error(f"Error retrieving results for student {student_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/questions/{question_id}/extract-concepts")
 async def extract_and_save_concepts(question_id: str) -> Dict[str, Any]:
     """Step 2: Extract key concepts from ideal answer and save to database"""
-    check_database_service()
+    check_question_service()
     
     try:
-        question = database_service.get_question_with_ideal_answer(question_id)
+        question = question_service.get_question_with_ideal_answer(question_id)
         if not question:
             raise HTTPException(status_code=404, detail=f"Question {question_id} not found")
         
         start_time = time.time()
-        key_concepts = await database_service.extract_and_save_key_concepts(question)
+        key_concepts = await question_service.extract_and_save_key_concepts(question)
         processing_time = (time.time() - start_time) * 1000
         
         concepts_data = []
@@ -175,55 +209,6 @@ async def extract_and_save_concepts(question_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error extracting concepts for question {question_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/students/{student_id}/answers/{question_id}")
-async def get_student_answer(student_id: str, question_id: str) -> Dict[str, Any]:
-    """Step 3: Retrieve student's submitted answer"""
-    check_database_service()
-    
-    try:
-        student_answer = database_service.get_student_answer(student_id, question_id)
-        if not student_answer:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Student answer not found for student {student_id}, question {question_id}"
-            )
-        
-        return {
-            "id": student_answer.id,
-            "answer_id": student_answer.answer_id,
-            "student_id": student_answer.student_id,
-            "question_id": question_id,
-            "answer_text": student_answer.answer_text,
-            "submitted_at": student_answer.submitted_at.isoformat(),
-            "word_count": student_answer.word_count,
-            "language": student_answer.language
-        }
-        
-    except Exception as e:
-        logger.error(f"Error retrieving student answer: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# Data Management Endpoints
-@router.get("/students/{student_id}/results")
-async def get_student_results(student_id: str) -> Dict[str, Any]:
-    """Get all grading results for a student"""
-    check_database_service()
-    
-    try:
-        results = database_service.get_grading_results_by_student(student_id)
-        return {
-            "student_id": student_id,
-            "results_count": len(results),
-            "results": results
-        }
-        
-    except Exception as e:
-        logger.error(f"Error retrieving results for student {student_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
         
 ########################################################################
 # Note: The database services not needed for me

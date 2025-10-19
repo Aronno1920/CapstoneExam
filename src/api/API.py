@@ -11,17 +11,17 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from ..models.database import DatabaseManager
+from ..models.question import DatabaseManager
 from ..models.schemas import (
     GradingRequest, GradingResponse, BatchGradingRequest, BatchGradingResponse,
     IdealAnswer, StudentAnswer, KeyConcept
 )
-from ..services.database_service import DatabaseService
+from ..services.question_service import QuestionService
 from ..services.llm_service import llm_service, LLMError
 from ..utils.config import settings, validate_api_keys
 
 # Import routers
-from .routers import database, grade, llm
+from .routers import question, grade, llm
 
 
 # Configure logging
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 # Global database components
 db_manager: DatabaseManager = None
-database_service: DatabaseService = None
+question_service: QuestionService = None
 
 
 def build_connection_string() -> str:
@@ -70,7 +70,7 @@ def build_connection_string() -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan context manager"""
-    global db_manager, database_service
+    global db_manager, question_service
     
     # Startup
     logger.info("Starting AI Examiner API with Router-based structure...")
@@ -105,12 +105,13 @@ async def lifespan(app: FastAPI):
                 
                 logger.info(f"✅ Database connected successfully! Found {question_count} questions.")
                 
-                # Initialize database service
-                database_service = DatabaseService(db_manager)
+                # Initialize question service
+                question_service = QuestionService(db_manager)
                 
-                # Set database services in database router
-                database.set_database_services(db_manager, database_service)
-                logger.info("MSSQL database services initialized")
+                # Set database services in question and grade routers
+                question.set_database_services(db_manager, question_service)
+                grade.set_database_services(db_manager, question_service)
+                logger.info("MSSQL question services initialized")
                     
             else:
                 logger.info("Database router will operate in unavailable mode")
@@ -157,7 +158,7 @@ app.add_middleware(
 )
 
 # Include routers (use prefixes defined in each router and show in Swagger)
-app.include_router(database.router)
+app.include_router(question.router)
 app.include_router(grade.router)
 app.include_router(llm.router)
 
@@ -171,7 +172,8 @@ async def root() -> Dict[str, Any]:
         "version": "2.0.0",
         "description": "AI-powered narrative answer grading system",
         "routers": {
-            "database": "/database - MSSQL database operations and workflow (hidden from docs)",
+            "question": "/question - MSSQL question operations and workflow (hidden from docs)",
+            "grade": "/grade - Grading workflow operations",
             "llm": "/llm - LLM operations and in-memory grading (hidden from docs)"
         },
         "internal_docs": "/internal/routes",
@@ -190,7 +192,7 @@ async def health_check() -> Dict[str, Any]:
         "timestamp": time.time(),
         "database": "connected" if db_manager else "not_configured",
         "llm": "connected" if llm_service.validate_connection() else "disconnected",
-        "routers": ["database", "llm"]
+        "routers": ["question", "grade", "llm"]
     }
 
 
@@ -221,7 +223,8 @@ async def detailed_health_check() -> Dict[str, Any]:
         "database_connected": db_connected,
         "database_url": f"{settings.db_server}:{settings.db_port}/{settings.db_name}" if db_manager else "not_configured",
         "routers": {
-            "database": "/database - Available" if db_connected else "/database - Unavailable",
+            "question": "/question - Available" if db_connected else "/question - Unavailable",
+            "grade": "/grade - Available" if db_connected else "/grade - Unavailable",
             "llm": "/llm - Available" if llm_connected else "/llm - Error"
         }
     }
@@ -232,17 +235,25 @@ async def get_internal_routes() -> Dict[str, Any]:
     """Get information about internal/hidden routes (not shown in main Swagger docs)"""
     return {
         "message": "Internal API Routes - Not shown in main documentation",
-        "database_routes": {
-            "prefix": "/database",
-            "description": "MSSQL database operations and workflow",
+        "question_routes": {
+            "prefix": "/question",
+            "description": "MSSQL question operations and workflow",
             "endpoints": [
-                "GET /database/info - Database connection info",
-                "GET /database/tables - Database table information",
-                "GET /database/questions/{question_id} - Get question details",
-                "POST /database/questions - Create new question",
-                "GET /database/students/{student_id}/answers/{question_id} - Get student answer",
-                "POST /database/student-answers - Create student answer",
-                "POST /database/grade/workflow - Complete grading workflow"
+                "GET /question/info - Database connection info",
+                "GET /question/health - Database health check",
+                "GET /question/questions/{question_id} - Get question details",
+                "POST /question/questions - Create new question",
+                "GET /question/students/{student_id}/answers/{question_id} - Get student answer",
+                "POST /question/student-answers - Create student answer",
+                "POST /question/questions/{question_id}/extract-concepts - Extract key concepts"
+            ]
+        },
+        "grade_routes": {
+            "prefix": "/grade",
+            "description": "Grading workflow operations",
+            "endpoints": [
+                "POST /grade/workflow - Complete grading workflow for single answer",
+                "POST /grade/batch/workflow - Batch grading workflow for multiple answers"
             ]
         },
         "llm_routes": {
