@@ -10,9 +10,9 @@ from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
 from ..utils.config import settings
 
-# Import routers
+
 from .routers import question_api, grade_api, llm_api, answer_api
-# Import database services
+
 from ..utils.database_manager import DatabaseManager
 from ..services.question_service import QuestionService
 from ..services.answer_service import AnswerService

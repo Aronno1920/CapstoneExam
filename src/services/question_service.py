@@ -65,20 +65,10 @@ class QuestionService:
             if question:
                 logger.info(f"Retrieved question {question_id}")
                 
-                # Log audit event
-                self.log_audit_event(
-                    session, "question_retrieval", "question", question_id,
-                    {"max_marks": question.max_marks, "subject": question.subject}
-                )
-            
             return question
             
         except SQLAlchemyError as e:
             logger.error(f"Database error retrieving question {question_id}: {e}")
-            self.log_audit_event(
-                session, "question_retrieval", "question", question_id,
-                {}, "failure", str(e)
-            )
             return None
         finally:
             session.close()
@@ -114,20 +104,10 @@ class QuestionService:
             
             logger.info(f"Retrieved question {question_id} with {key_concepts_count} key concepts")
             
-            # Log audit event
-            self.log_audit_event(
-                session, "question_retrieval", "question", question_id,
-                {"max_marks": question.max_marks, "subject": question.subject}
-            )
-            
             return result
             
         except SQLAlchemyError as e:
             logger.error(f"Database error retrieving question {question_id}: {e}")
-            self.log_audit_event(
-                session, "question_retrieval", "question", question_id,
-                {}, "failure", str(e)
-            )
             return None
         finally:
             session.close()
@@ -161,20 +141,10 @@ class QuestionService:
             
             logger.info(f"Retrieved {len(result)} questions")
             
-            # Log audit event
-            self.log_audit_event(
-                session, "questions_retrieval", "question", "all",
-                {"questions_count": len(result)}
-            )
-            
             return result
             
         except SQLAlchemyError as e:
             logger.error(f"Database error retrieving all questions: {e}")
-            self.log_audit_event(
-                session, "questions_retrieval", "question", "all",
-                {}, "failure", str(e)
-            )
             return []
         finally:
             session.close()
@@ -239,25 +209,12 @@ class QuestionService:
             
             logger.info(f"Saved {len(saved_concepts)} key concepts for question {question.question_id}")
             
-            # Log audit event
-            self.log_audit_event(
-                session, "concept_extraction", "question", question.question_id,
-                {
-                    "concepts_count": len(saved_concepts),
-                    "extraction_method": "llm_extracted",
-                    "points_per_concept": points_per_concept
-                }
-            )
-            
             return saved_concepts
             
         except Exception as e:
             session.rollback()
             logger.error(f"Error extracting/saving key concepts for question {question.question_id}: {e}")
-            self.log_audit_event(
-                session, "concept_extraction", "question", question.question_id,
-                {}, "failure", str(e)
-            )
+            
             raise
         finally:
             session.close()
@@ -289,24 +246,10 @@ class QuestionService:
             
             logger.info(f"Retrieved answer from student {student_id} for question {question_id}")
             
-            # Log audit event
-            self.log_audit_event(
-                session, "student_answer_retrieval", "student_answer", str(sa.id),
-                {
-                    "student_id": student_id,
-                    "question_id": question_id,
-                    "word_count": sa.word_count
-                }
-            )
-            
             return sa
             
         except SQLAlchemyError as e:
             logger.error(f"Database error retrieving student answer: {e}")
-            self.log_audit_event(
-                session, "student_answer_retrieval", "student_answer", "unknown",
-                {"student_id": student_id, "question_id": question_id}, "failure", str(e)
-            )
             return None
         finally:
             session.close()
@@ -448,7 +391,7 @@ class QuestionService:
                 "suggestions": json.dumps(grading_result_data.get("suggestions", [])),
                 "grading_model": settings.llm_model,
                 "processing_time_ms": processing_time,
-                "graded_by": "ai_examiner",
+                "graded_by": "gradeService",
                 "raw_llm_response": json.dumps({"semantic_analysis": semantic_analysis, "grading_result": grading_result_data}),
                 "criteria_scores": json.dumps(grading_result_data.get("criteria_scores", {})),
             }
@@ -496,20 +439,7 @@ class QuestionService:
                     "reason": concept_eval_data["explanation"],
                 })
             session.commit()
-            
-            # Log successful grading
-            self.log_audit_event(
-                session, "grading_completed", "grading_result", str(grading_result_id),
-                {
-                    "student_id": student_answer.student_id,
-                    "question_id": question.question_id,
-                    "total_score": total_score,
-                    "percentage": percentage,
-                    "passed": passed,
-                    "processing_time_ms": processing_time,
-                }
-            )
-            
+                       
             response = {
                 "Score": f"{total_score:.1f}/{question.max_marks}",
                 "Justification": grading_result_data.get("detailed_feedback", ""),
@@ -528,12 +458,7 @@ class QuestionService:
         except Exception as e:
             session.rollback()
             logger.error(f"Error grading student answer: {e}")
-            # Log error
-            self.log_audit_event(
-                session, "grading_failed", "student_answer", str(student_answer.id),
-                {"student_id": student_answer.student_id, "question_id": question.question_id, "error": str(e)},
-                "failure", str(e)
-            )
+
             raise
         finally:
             session.close()
@@ -705,4 +630,4 @@ class QuestionService:
 
 
 # Initialize question service (will be set up in main application)
-question_service: QuestionService = None
+question_service: QuestionService = None # type: ignore

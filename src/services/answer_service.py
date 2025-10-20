@@ -42,30 +42,20 @@ class AnswerService:
             sa = row._mapping if hasattr(row, "_mapping") else row
             
             # Update word count if not set
-            if not sa["word_count"]:
-                wc = len((sa["answer_text"] or "").split())
-                session.execute(text("UPDATE student_answers SET word_count = :wc WHERE id = :id"), {"wc": wc, "id": sa["id"]})
-                session.commit()
-                sa = dict(sa)
-                sa["word_count"] = wc
+            # if not sa["word_count"]:
+            #     wc = len((sa["answer_text"] or "").split())
+            #     session.execute(text("UPDATE student_answers SET word_count = :wc WHERE id = :id"), {"wc": wc, "id": sa["id"]})
+            #     session.commit()
+            #     sa = dict(sa)
+            #     sa["word_count"] = wc
             
             logger.info(f"Retrieved answer from student {student_id} for question {question_id}")
-            
-            # Log audit event
-            self.log_audit_event(
-                session, "student_answer_retrieval", "student_answer", str(sa["id"]),
-                {"student_id": student_id, "question_id": question_id, "word_count": sa["word_count"]}
-            )
             
             # Return a simple namespace-like dict access via attribute in routers
             return type("Obj", (), sa) if isinstance(sa, dict) else sa
             
         except SQLAlchemyError as e:
             logger.error(f"Database error retrieving student answer: {e}")
-            self.log_audit_event(
-                session, "student_answer_retrieval", "student_answer", "unknown",
-                {"student_id": student_id, "question_id": question_id}, "failure", str(e)
-            )
             return None
         finally:
             session.close()

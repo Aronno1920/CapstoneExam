@@ -3,16 +3,12 @@ LLM Service for AI Examiner System
 Handles interactions with GitHub Models LLM provider
 """
 import json
-import time
 import logging
 from typing import Dict, Any, Optional, Union, List
 from abc import ABC, abstractmethod
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-import openai
-import httpx
 from openai import OpenAI, APIError as OpenAIAPIError
-
 from ..utils.config import settings, get_llm_config
 from ..utils.prompt_templates import PromptTemplates
 from ..models.schemas import LLMProvider, LLMModel

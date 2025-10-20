@@ -13,7 +13,7 @@ from ...models.schemas import (
     GradingRequest, GradingResponse, BatchGradingRequest, BatchGradingResponse,
     IdealAnswer, StudentAnswer, GradingResult
 )
-from ...services.grading_service import ai_examiner, GradingError
+from ...services.grade_service import gradeService, GradingError
 from ...services.llm_service import llm_service, LLMError
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ async def grade_answer(request: GradingRequest) -> GradingResponse:
         logger.info(f"LLM grading request received for student: {request.student_answer.student_id}")
         
         # Perform grading using in-memory AI examiner
-        result = await ai_examiner.grade_answer(
+        result = await gradeService.grade_answer(
             student_answer=request.student_answer,
             ideal_answer=request.ideal_answer,
             use_chain_of_thought=True
@@ -84,7 +84,7 @@ async def batch_grade_answers(request: BatchGradingRequest) -> BatchGradingRespo
     logger.info(f"LLM batch grading request received for {len(request.requests)} answers")
     
     try:
-        result = await ai_examiner.batch_grade(request)
+        result = await gradeService.batch_grade(request)
         
         logger.info(
             f"LLM batch grading completed: {result.total_successful} successful, "

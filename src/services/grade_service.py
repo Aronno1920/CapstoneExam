@@ -13,7 +13,7 @@ from ..models.schemas import (
     IdealAnswer, StudentAnswer, GradingResult, ConceptEvaluation,
     KeyConcept, GradingResponse, BatchGradingRequest, BatchGradingResponse
 )
-from ..services.llm_service import llm_service
+from .llm_service import llm_service
 from ..utils.config import settings
 
 
@@ -203,7 +203,7 @@ class ResponseEvaluator:
             raise GradingError(f"Chain-of-thought grading failed: {e}")
 
 
-class AIExaminer:
+class GradeService:
     """Main AI Examiner class that orchestrates the entire grading process"""
     
     def __init__(self):
@@ -479,7 +479,7 @@ class AIExaminer:
                 
                 # Create error response
                 error_response = GradingResponse(
-                    result=None,  # This will need to be handled properly in the API
+                    result=None,  # This will need to be handled properly in the API # type: ignore
                     processing_time_ms=0,
                     success=False,
                     error_message=str(e)
@@ -499,4 +499,4 @@ class AIExaminer:
 
 
 # Global AI Examiner instance
-ai_examiner = AIExaminer()
+gradeService = GradeService()
