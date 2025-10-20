@@ -6,14 +6,14 @@ import uuid
 import time
 import logging
 from datetime import datetime
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Union
 from dataclasses import dataclass
 
 from ..models.schemas import (
     IdealAnswer, StudentAnswer, GradingResult, ConceptEvaluation,
-    KeyConcept, GradingRequest, GradingResponse, BatchGradingRequest, BatchGradingResponse
+    KeyConcept, GradingResponse, BatchGradingRequest, BatchGradingResponse
 )
-from ..services.llm_service import llm_service, LLMError
+from ..services.llm_service import llm_service
 from ..utils.config import settings
 
 

@@ -13,7 +13,8 @@ import openai
 import httpx
 from openai import OpenAI, APIError as OpenAIAPIError
 
-from ..utils.config import settings, get_llm_config, PromptTemplates
+from ..utils.config import settings, get_llm_config
+from ..utils.prompt_templates import PromptTemplates
 from ..models.schemas import LLMProvider, LLMModel
 
 

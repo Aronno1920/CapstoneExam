@@ -9,13 +9,16 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
-from ..models.question import (
-    Question, KeyConcept, RubricCriteria, StudentAnswer, 
-    GradingResult, ConceptEvaluation, GradingSession, AuditLog,
-    DatabaseManager
-)
+from ..utils.database_manager import DatabaseManager
 from ..utils.config import settings
 from ..services.llm_service import llm_service
+
+from ..models.db_schemas import (
+    Question, KeyConcept, RubricCriteria, StudentAnswer, 
+    GradingResult, ConceptEvaluation, AuditLog
+)
+from ..models.schemas import (GradingCriteria, GradingRubric, KeyConcept as SchemaKeyConcept,
+                             IdealAnswer, StudentAnswer as SchemaStudentAnswer, GradingResult as SchemaGradingResult)
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +35,7 @@ class QuestionService:
     
     def log_audit_event(self, session: Session, event_type: str, entity_type: str, 
                        entity_id: str, event_data: Dict[str, Any], 
-                       result_status: str = "success", error_message: str = None):
+                       result_status: str = "success", error_message: str = None): # type: ignore
         """Log audit event"""
         try:
             audit_log = AuditLog(
@@ -141,6 +144,58 @@ class QuestionService:
                 {}, "failure", str(e)
             )
             return None
+        finally:
+            session.close()
+    
+    def get_all_questions(self) -> List[Dict[str, Any]]:
+        """
+        Get all questions from the database with basic details
+        
+        Returns:
+            List of dictionaries with question details
+        """
+        session = self.get_session()
+        try:
+            questions = session.query(Question).all()
+            
+            result = []
+            for question in questions:
+                # Count key concepts for each question
+                key_concepts_count = session.query(KeyConcept).filter(
+                    KeyConcept.question_id == question.id
+                ).count()
+                
+                result.append({
+                    "id": question.id,
+                    "question_id": question.question_id,
+                    "subject": question.subject,
+                    "topic": question.topic,
+                    "question_text": question.question_text,
+                    "max_marks": question.max_marks,
+                    "passing_threshold": question.passing_threshold,
+                    "difficulty_level": question.difficulty_level,
+                    "key_concepts_count": key_concepts_count,
+                    "created_at": question.created_at.isoformat(),
+                    "updated_at": question.updated_at.isoformat()
+                })
+            
+            logger.info(f"Retrieved {len(result)} questions")
+            
+            # Log audit event
+            self.log_audit_event(
+                session, "questions_retrieval", "question", "all",
+                {"questions_count": len(result)}
+            )
+            
+            return result
+            
+        except SQLAlchemyError as e:
+            logger.error(f"Database error retrieving all questions: {e}")
+            self.log_audit_event(
+                session, "questions_retrieval", "question", "all",
+                {}, "failure", str(e)
+            )
+            return []
         finally:
             session.close()
     

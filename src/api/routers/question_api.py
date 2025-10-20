@@ -5,12 +5,15 @@ Handles all MSSQL question-related endpoints and workflow
 import time
 import logging
 from typing import Dict, Any, List
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException
 
-from ...models import DatabaseManager, Question, StudentAnswer as DBStudentAnswer
+from ...utils.database_manager import DatabaseManager
 from ...services.question_service import QuestionService
-from ...utils.config import settings
+from ...models.db_schemas import (
+    Question, KeyConcept, RubricCriteria, StudentAnswer, GradingResult, ConceptEvaluation, GradingSession, AuditLog
+)
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +25,8 @@ router = APIRouter(
 )
 
 # Global question service components (will be set from main app)
-db_manager: DatabaseManager = None
-question_service: QuestionService = None
+db_manager: DatabaseManager = None # type: ignore
+question_service: QuestionService = None # type: ignore
 
 
 def set_database_services(db_mgr: DatabaseManager, db_svc: QuestionService):
@@ -33,26 +36,6 @@ def set_database_services(db_mgr: DatabaseManager, db_svc: QuestionService):
     question_service = db_svc
 
 # Request/Response Models
-class CreateQuestionRequest(BaseModel):
-    """Request to create a new question"""
-    question_id: str
-    subject: str
-    topic: str
-    question_text: str
-    ideal_answer: str
-    max_marks: float
-    passing_threshold: float = 60.0
-    difficulty_level: str = "intermediate"
-
-
-class CreateStudentAnswerRequest(BaseModel):
-    """Request to create a student answer"""
-    student_id: str
-    question_id: str
-    answer_text: str
-    language: str = "en"
-
-
 def check_question_service():
     """Helper to check if question service is available"""
     if not question_service:
@@ -63,52 +46,8 @@ def check_question_service():
 
 
 # Database Info and Health Check Endpoints
-@router.get("/info")
-async def get_database_info() -> Dict[str, Any]:
-    """Get database connection information"""
-    return {
-        "server": settings.db_server,
-        "port": settings.db_port,
-        "database": settings.db_name,
-        "driver": settings.db_driver,
-        "connected": db_manager is not None
-    }
 
-
-@router.get("/health")
-async def database_health_check() -> Dict[str, Any]:
-    """Check database connectivity"""
-    
-    check_question_service()
-    if not db_manager:
-        return {
-            "status": "not_configured",
-            "connected": False,
-            "message": "Database not configured"
-        }
-    
-    try:
-        session = db_manager.get_session()
-        session.execute("SELECT GETDATE()") # type: ignore
-        session.close()
-        
-        return {
-            "status": "healthy",
-            "connected": True,
-            "server": settings.db_server,
-            "database": settings.db_name
-        }
-        
-    except Exception as e:
-        logger.error(f"Database health check failed: {e}")
-        return {
-            "status": "unhealthy",
-            "connected": False,
-            "error": str(e)
-        }
-
-
-@router.get("/questions/{question_id}")
+@router.get("/{question_id}")
 async def get_question(question_id: str) -> Dict[str, Any]:
     """Step 1: Retrieve ideal answer and marks for a question"""
     check_question_service()
@@ -122,6 +61,25 @@ async def get_question(question_id: str) -> Dict[str, Any]:
         
     except Exception as e:
         logger.error(f"Error retrieving question {question_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/")
+async def get_all_questions() -> Dict[str, Any]:
+    """Get all questions from the database"""
+    check_question_service()
+    
+    try:
+        questions = question_service.get_all_questions()
+        
+        return {
+            "questions": questions,
+            "total_count": len(questions),
+            "status": "success"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error retrieving all questions: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -209,66 +167,3 @@ async def extract_and_save_concepts(question_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error extracting concepts for question {question_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-        
-########################################################################
-# Note: The database services not needed for me
-
-# @router.post("/questions")
-# async def create_question(request: CreateQuestionRequest) -> Dict[str, Any]:
-#     """Create a new question with ideal answer"""
-#     check_database_service()
-    
-#     try:
-#         question = database_service.create_question(
-#             question_id=request.question_id,
-#             subject=request.subject,
-#             topic=request.topic,
-#             question_text=request.question_text,
-#             ideal_answer=request.ideal_answer,
-#             max_marks=request.max_marks,
-#             passing_threshold=request.passing_threshold,
-#             difficulty_level=request.difficulty_level
-#         )
-        
-#         return {
-#             "id": question.id,
-#             "question_id": question.question_id,
-#             "subject": question.subject,
-#             "topic": question.topic,
-#             "max_marks": question.max_marks,
-#             "created_at": question.created_at.isoformat(),
-#             "message": f"Question {request.question_id} created successfully"
-#         }
-        
-#     except Exception as e:
-#         logger.error(f"Error creating question: {e}")
-#         raise HTTPException(status_code=400, detail=str(e))
-
-
-# @router.post("/student-answers")
-# async def create_student_answer(request: CreateStudentAnswerRequest) -> Dict[str, Any]:
-#     """Create a new student answer"""
-#     check_database_service()
-    
-#     try:
-#         student_answer = database_service.create_student_answer(
-#             student_id=request.student_id,
-#             question_id=request.question_id,
-#             answer_text=request.answer_text,
-#             language=request.language
-#         )
-        
-#         return {
-#             "id": student_answer.id,
-#             "answer_id": student_answer.answer_id,
-#             "student_id": student_answer.student_id,
-#             "question_id": request.question_id,
-#             "word_count": student_answer.word_count,
-#             "submitted_at": student_answer.submitted_at.isoformat(),
-#             "message": f"Student answer created successfully"
-#         }
-        
-#     except Exception as e:
-#         logger.error(f"Error creating student answer: {e}")
-#         raise HTTPException(status_code=400, detail=str(e))
-########################################################################

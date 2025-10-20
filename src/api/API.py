@@ -1,27 +1,20 @@
 """
 FastAPI REST API for AI Examiner System - Unified with APIRouters
 """
-import logging
 import time
-from typing import Dict, Any
-from contextlib import asynccontextmanager
-import urllib.parse
-
-from fastapi import FastAPI, HTTPException, status
+import logging
+from fastapi import FastAPI
+from typing import Dict, Any, List
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
-
-from ..models.question import DatabaseManager
-from ..models.schemas import (
-    GradingRequest, GradingResponse, BatchGradingRequest, BatchGradingResponse,
-    IdealAnswer, StudentAnswer, KeyConcept
-)
-from ..services.question_service import QuestionService
-from ..services.llm_service import llm_service, LLMError
-from ..utils.config import settings, validate_api_keys
+from fastapi.openapi.utils import get_openapi
+from contextlib import asynccontextmanager
+from ..utils.config import settings
 
 # Import routers
-from .routers import grade_api, llm_api, question_api
+from .routers import question_api, grade_api, llm_api
+# Import database services
+from ..utils.database_manager import DatabaseManager
+from ..services.question_service import QuestionService
 
 
 # Configure logging
@@ -31,111 +24,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global database components
-db_manager: DatabaseManager = None
-question_service: QuestionService = None
-
-
-def build_connection_string() -> str:
-    """Build MSSQL connection string from settings"""
-    if settings.database_url and not settings.database_url.startswith("sqlite"):
-        return settings.database_url
-    
-    # Use the exact working connection string from our test
-    server = settings.db_server
-    if server in ["Ahmed-PC", "localhost", "."]:
-        server = "localhost"
-    
-    # Check if we should use Windows Authentication
-    if getattr(settings, 'use_windows_auth', True):  # Default to Windows Auth
-        # Use the exact format that worked in our test
-        connection_string = (
-            f"mssql+pyodbc://@{server}:{settings.db_port}/{settings.db_name}"
-            f"?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes&timeout=30"
-        )
-    else:
-        # SQL Server Authentication
-        password = urllib.parse.quote_plus(settings.db_password)
-        connection_string = (
-            f"mssql+pyodbc://{settings.db_username}:{password}@"
-            f"{server}:{settings.db_port}/{settings.db_name}"
-            f"?driver=ODBC+Driver+17+for+SQL+Server&timeout=30"
-        )
-    
-    logger.info(f"Attempting database connection to: {server}:{settings.db_port}/{settings.db_name}")
-    logger.info(f"Connection string: {connection_string}")
-    return connection_string
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan context manager"""
-    global db_manager, question_service
-    
-    # Startup
-    logger.info("Starting AI Examiner API with Router-based structure...")
-    
+    """Initialize database services on application startup"""
     try:
-        # Validate API keys
-        api_validation = validate_api_keys()
-        if not api_validation["selected_provider_valid"]:
-            logger.error(f"Invalid API configuration for provider: {settings.llm_provider}")
-            raise RuntimeError("LLM API keys not properly configured")
+        # Build database connection string
+        if settings.use_windows_auth:
+            db_url = f"mssql+pyodbc://@{settings.db_server},{settings.db_port}/{settings.db_name}?driver={settings.db_driver}&trusted_connection=yes"
+        else:
+            db_url = f"mssql+pyodbc://{settings.db_username}:{settings.db_password}@{settings.db_server},{settings.db_port}/{settings.db_name}?driver={settings.db_driver}"
         
-        # Initialize database (if MSSQL configured)
-        try:
-            connection_string = build_connection_string()
-            if not connection_string.startswith("sqlite"):
-                logger.info(f"Connecting to database: {settings.db_server}:{settings.db_port}/{settings.db_name}")
-                
-                # Use the exact working connection string from our successful test
-                working_connection_string = (
-                    f"mssql+pyodbc://@localhost:1433/{settings.db_name}"
-                    f"?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes&timeout=30"
-                )
-                
-                logger.info("Attempting database connection with tested working format...")
-                db_manager = DatabaseManager(working_connection_string)
-                
-                # Test the connection
-                session = db_manager.get_session()
-                result = session.execute(text("SELECT COUNT(*) FROM questions")).fetchone()
-                question_count = result[0]
-                session.close()
-                
-                logger.info(f"✅ Database connected successfully! Found {question_count} questions.")
-                
-                # Initialize question service
-                question_service = QuestionService(db_manager)
-                
-                # Set database services in question and grade routers
-                question_api.set_database_services(db_manager, question_service)
-                grade_api.set_database_services(db_manager, question_service)
-                logger.info("MSSQL question services initialized")
-                    
-            else:
-                logger.info("Database router will operate in unavailable mode")
-        except Exception as db_error:
-            logger.warning(f"Database connection failed: {db_error}")
-            logger.info("Database router will operate in unavailable mode")
-            logger.info("API will start without database functionality")
+        # Initialize database manager
+        db_manager = DatabaseManager(db_url)
+        question_service = QuestionService(db_manager)
         
-        # Test LLM connection
-        if not llm_service.validate_connection():
-            logger.error("Failed to validate LLM connection")
-            raise RuntimeError("Cannot connect to LLM provider")
+        # Set services in routers
+        question_api.set_database_services(db_manager, question_service)
+        grade_api.set_database_services(db_manager, question_service)
         
-        logger.info("AI Examiner API started successfully with routers")
-        yield
+        logger.info("Database services initialized successfully")
         
     except Exception as e:
-        logger.error(f"Failed to start application: {e}")
-        raise
+        logger.error(f"Failed to initialize database services: {e}")
+        # Don't raise here to allow API to start without database
+        logger.warning("API starting without database connection")
     
-    # Shutdown
-    logger.info("Shutting down AI Examiner API...")
-    if db_manager:
-        db_manager.close()
+    yield
+    
+    # Cleanup on shutdown
+    logger.info("Application shutdown")
 
 
 # Create FastAPI app
@@ -157,18 +75,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers (use prefixes defined in each router and show in Swagger)
-app.include_router(question_api.router)
-app.include_router(grade_api.router)
-app.include_router(llm_api.router)
 
-
-# Root endpoint
 @app.get("/")
 async def root() -> Dict[str, Any]:
     """Root endpoint with API information"""
     return {
-        "name": "AI Examiner API",
+        "name": "AI Examiner",
         "version": "2.0.0",
         "description": "AI-powered narrative answer grading system",
         "routers": {
@@ -176,101 +88,34 @@ async def root() -> Dict[str, Any]:
             "grade": "/grade - Grading workflow operations",
             "llm": "/llm - LLM operations and in-memory grading (hidden from docs)"
         },
-        "internal_docs": "/internal/routes",
         "docs": "/docs",
         "health": "/health",
         "timestamp": time.time()
     }
 
 
-# Health check endpoints
-@app.get("/health")
-async def health_check() -> Dict[str, Any]:
-    """Basic health check"""
-    return {
-        "status": "healthy", 
-        "timestamp": time.time(),
-        "database": "connected" if db_manager else "not_configured",
-        "llm": "connected" if llm_service.validate_connection() else "disconnected",
-        "routers": ["question", "grade", "llm"]
-    }
-
-
-@app.get("/health/detailed")
-async def detailed_health_check() -> Dict[str, Any]:
-    """Detailed health check including LLM and database connectivity"""
-    llm_connected = llm_service.validate_connection()
-    provider_info = llm_service.get_provider_info()
-    api_validation = validate_api_keys()
+# Custom OpenAPI schema to hide Schemas section
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
     
-    # Test database connection
-    db_connected = False
-    if db_manager:
-        try:
-            session = db_manager.get_session()
-            session.execute("SELECT 1")
-            session.close()
-            db_connected = True
-        except Exception as e:
-            logger.error(f"Database health check failed: {e}")
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
     
-    return {
-        "status": "healthy" if llm_connected else "degraded",
-        "timestamp": time.time(),
-        "llm_provider": provider_info,
-        "api_keys_valid": api_validation,
-        "llm_connected": llm_connected,
-        "database_connected": db_connected,
-        "database_url": f"{settings.db_server}:{settings.db_port}/{settings.db_name}" if db_manager else "not_configured",
-        "routers": {
-            "question": "/question - Available" if db_connected else "/question - Unavailable",
-            "grade": "/grade - Available" if db_connected else "/grade - Unavailable",
-            "llm": "/llm - Available" if llm_connected else "/llm - Error"
-        }
-    }
+    if "components" in openapi_schema and "schemas" in openapi_schema["components"]:
+        del openapi_schema["components"]["schemas"]
+    
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 
-@app.get("/internal/routes", include_in_schema=False)
-async def get_internal_routes() -> Dict[str, Any]:
-    """Get information about internal/hidden routes (not shown in main Swagger docs)"""
-    return {
-        "message": "Internal API Routes - Not shown in main documentation",
-        "question_routes": {
-            "prefix": "/question",
-            "description": "MSSQL question operations and workflow",
-            "endpoints": [
-                "GET /question/info - Database connection info",
-                "GET /question/health - Database health check",
-                "GET /question/questions/{question_id} - Get question details",
-                "POST /question/questions - Create new question",
-                "GET /question/students/{student_id}/answers/{question_id} - Get student answer",
-                "POST /question/student-answers - Create student answer",
-                "POST /question/questions/{question_id}/extract-concepts - Extract key concepts"
-            ]
-        },
-        "grade_routes": {
-            "prefix": "/grade",
-            "description": "Grading workflow operations",
-            "endpoints": [
-                "POST /grade/workflow - Complete grading workflow for single answer",
-                "POST /grade/batch/workflow - Batch grading workflow for multiple answers"
-            ]
-        },
-        "llm_routes": {
-            "prefix": "/llm",
-            "description": "LLM operations and in-memory grading",
-            "endpoints": [
-                "POST /llm/grade - Grade single answer",
-                "POST /llm/grade/batch - Batch grade answers",
-                "POST /llm/analyze/concepts - Extract key concepts",
-                "POST /llm/analyze/similarity - Analyze semantic similarity",
-                "GET /llm/provider/info - LLM provider information",
-                "POST /llm/provider/test - Test LLM connection"
-            ]
-        },
-        "access_note": "These routes are functional but hidden from the main Swagger documentation for cleaner API presentation",
-        "main_docs": "/docs",
-        "timestamp": time.time()
-    }
-
-
+# Include routers (use prefixes defined in each router and show in Swagger)
+app.include_router(question_api.router)
+app.include_router(grade_api.router)
+app.include_router(llm_api.router)
