@@ -11,10 +11,11 @@ from contextlib import asynccontextmanager
 from ..utils.config import settings
 
 # Import routers
-from .routers import question_api, grade_api, llm_api
+from .routers import question_api, grade_api, llm_api, answer_api
 # Import database services
 from ..utils.database_manager import DatabaseManager
 from ..services.question_service import QuestionService
+from ..services.answer_service import AnswerService
 
 
 # Configure logging
@@ -38,10 +39,12 @@ async def lifespan(app: FastAPI):
         # Initialize database manager
         db_manager = DatabaseManager(db_url)
         question_service = QuestionService(db_manager)
+        answer_service = AnswerService(db_manager)
         
         # Set services in routers
         question_api.set_database_services(db_manager, question_service)
         grade_api.set_database_services(db_manager, question_service)
+        answer_api.set_database_services(db_manager, answer_service)
         
         logger.info("Database services initialized successfully")
         
@@ -84,7 +87,8 @@ async def root() -> Dict[str, Any]:
         "version": "2.0.0",
         "description": "AI-powered narrative answer grading system",
         "routers": {
-            "question": "/question - MSSQL question operations and workflow (hidden from docs)",
+            "question": "/question - MSSQL question operations and workflow",
+            "answer": "/answer - Student answer operations and management",
             "grade": "/grade - Grading workflow operations",
             "llm": "/llm - LLM operations and in-memory grading (hidden from docs)"
         },
@@ -117,5 +121,6 @@ app.openapi = custom_openapi
 
 # Include routers (use prefixes defined in each router and show in Swagger)
 app.include_router(question_api.router)
+app.include_router(answer_api.router)
 app.include_router(grade_api.router)
 app.include_router(llm_api.router)

@@ -1,18 +1,17 @@
 """
-Question Operations Router
-Handles all MSSQL question-related endpoints and workflow
+Question Operations Router: Handles all MSSQL question-related endpoints and workflow
 """
 import time
 import logging
 from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from ...utils.database_manager import DatabaseManager
 from ...services.question_service import QuestionService
 from ...models.db_schemas import (
     Question, KeyConcept, RubricCriteria, StudentAnswer, GradingResult, ConceptEvaluation, GradingSession, AuditLog
 )
-
 
 
 logger = logging.getLogger(__name__)
@@ -35,7 +34,6 @@ def set_database_services(db_mgr: DatabaseManager, db_svc: QuestionService):
     db_manager = db_mgr
     question_service = db_svc
 
-# Request/Response Models
 def check_question_service():
     """Helper to check if question service is available"""
     if not question_service:
@@ -44,9 +42,7 @@ def check_question_service():
             detail="Question service not available. Please configure MSSQL connection."
         )
 
-
 # Database Info and Health Check Endpoints
-
 @router.get("/{question_id}")
 async def get_question(question_id: str) -> Dict[str, Any]:
     """Step 1: Retrieve ideal answer and marks for a question"""
@@ -64,7 +60,7 @@ async def get_question(question_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/")
+@router.get("/all")
 async def get_all_questions() -> Dict[str, Any]:
     """Get all questions from the database"""
     check_question_service()
@@ -128,7 +124,7 @@ async def get_student_results(student_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error retrieving results for student {student_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
+    
 
 @router.post("/questions/{question_id}/extract-concepts")
 async def extract_and_save_concepts(question_id: str) -> Dict[str, Any]:
