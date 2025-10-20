@@ -1,8 +1,6 @@
 import uvicorn
 from src.utils.config import settings
-
-# Expose ASGI app for debuggers and CLI (uvicorn main:app)
-from src.api.API import app  # noqa: F401
+from src.api.API import app  
 
 if __name__ == "__main__":
     # Allow running via `python main.py`
