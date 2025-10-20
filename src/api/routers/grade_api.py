@@ -8,8 +8,7 @@ from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from ...utils.database_manager import DatabaseManager
-from ...services.question_service import QuestionService
+from ...services.grade_service import GradeService
 
 
 logger = logging.getLogger(__name__)
@@ -22,15 +21,13 @@ router = APIRouter(
 )
 
 # Global question service components (will be set from main app)
-db_manager: DatabaseManager = None
-question_service: QuestionService = None
+grade_service: GradeService = None # type: ignore
 
 
-def set_database_services(db_mgr: DatabaseManager, db_svc: QuestionService):
+def set_database_services(grd_svc: GradeService):
     """Set question services from main application"""
-    global db_manager, question_service
-    db_manager = db_mgr
-    question_service = db_svc
+    global grade_service
+    grade_service = grd_svc
 
 
 # Request/Response Models
@@ -54,7 +51,7 @@ class GradingWorkflowResponse(BaseModel):
 
 def check_question_service():
     """Helper to check if question service is available"""
-    if not question_service:
+    if not grade_service:
         raise HTTPException(
             status_code=503, 
             detail="Question service not available. Please configure MSSQL connection."
@@ -78,7 +75,7 @@ async def complete_grading_workflow(request: GradingWorkflowRequest) -> GradingW
         logger.info(f"Starting grading workflow for student {request.student_id}, question {request.question_id}")
         
         # Execute the complete workflow
-        result = await question_service.complete_grading_workflow(
+        result = await grade_service.complete_grading_workflow(
             question_id=request.question_id,
             student_id=request.student_id
         )
@@ -119,7 +116,7 @@ async def batch_grading_workflow(requests: List[GradingWorkflowRequest]) -> Dict
     for grading_request in requests:
         request_start = time.time()
         try:
-            result = await question_service.complete_grading_workflow(
+            result = await grade_service.complete_grading_workflow(
                 question_id=grading_request.question_id,
                 student_id=grading_request.student_id
             )

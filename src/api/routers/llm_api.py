@@ -13,7 +13,7 @@ from ...models.schemas import (
     GradingRequest, GradingResponse, BatchGradingRequest, BatchGradingResponse,
     IdealAnswer, StudentAnswer, GradingResult
 )
-from ...services.grade_service import gradeService, GradingError
+from ...services.grade_service import GradeService, GradingError
 from ...services.llm_service import llm_service, LLMError
 
 logger = logging.getLogger(__name__)

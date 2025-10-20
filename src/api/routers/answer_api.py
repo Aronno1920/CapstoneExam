@@ -8,7 +8,6 @@ from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from ...utils.database_manager import DatabaseManager
 from ...services.answer_service import AnswerService
 
 logger = logging.getLogger(__name__)
@@ -21,14 +20,12 @@ router = APIRouter(
 )
 
 # Global answer service components (will be set from main app)
-db_manager: DatabaseManager = None # type: ignore
 answer_service: AnswerService = None # type: ignore
 
 
-def set_database_services(db_mgr: DatabaseManager, ans_svc: AnswerService):
+def set_database_services(ans_svc: AnswerService):
     """Set answer services from main application"""
-    global db_manager, answer_service
-    db_manager = db_mgr
+    global answer_service
     answer_service = ans_svc
 
 

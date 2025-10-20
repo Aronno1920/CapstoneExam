@@ -7,7 +7,6 @@ from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ...utils.database_manager import DatabaseManager
 from ...services.question_service import QuestionService
 
 logger = logging.getLogger(__name__)
@@ -20,14 +19,12 @@ router = APIRouter(
 )
 
 # Global question service components (will be set from main app)
-db_manager: DatabaseManager = None # type: ignore
 question_service: QuestionService = None # type: ignore
 
 
-def set_database_services(db_mgr: DatabaseManager, db_svc: QuestionService):
+def set_database_services(db_svc: QuestionService):
     """Set question services from main application"""
-    global db_manager, question_service
-    db_manager = db_mgr
+    global question_service
     question_service = db_svc
 
 def check_question_service():
