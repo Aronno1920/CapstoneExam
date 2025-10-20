@@ -6,6 +6,9 @@ import json
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
+from types import SimpleNamespace
+import uuid
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -13,18 +16,27 @@ from ..utils.database_manager import DatabaseManager
 from ..utils.config import settings
 from ..services.llm_service import llm_service
 
-from ..models.db_schemas import (
-    Question, KeyConcept, RubricCriteria, StudentAnswer, 
-    GradingResult, ConceptEvaluation, AuditLog
-)
+# NOTE: Intentionally avoiding ORM model usage for DB operations in this service.
+# All DB access in this service uses direct SQL queries via SQLAlchemy text().
 from ..models.schemas import (GradingCriteria, GradingRubric, KeyConcept as SchemaKeyConcept,
                              IdealAnswer, StudentAnswer as SchemaStudentAnswer, GradingResult as SchemaGradingResult)
 
 logger = logging.getLogger(__name__)
 
 
+def _row_to_ns(row: Any) -> SimpleNamespace:
+    """Convert SQLAlchemy Row to attribute-accessible namespace"""
+    if row is None:
+        return None  # type: ignore
+    try:
+        mapping = row._mapping  # SQLAlchemy 1.4/2.0 RowMapping
+        return SimpleNamespace(**dict(mapping))
+    except AttributeError:
+        return SimpleNamespace(**dict(row))
+
+
 class QuestionService:
-    """Question service implementing the required workflow"""
+    """Question service implementing the required workflow using direct queries"""
     
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
@@ -33,26 +45,8 @@ class QuestionService:
         """Get database session"""
         return self.db_manager.get_session()
     
-    def log_audit_event(self, session: Session, event_type: str, entity_type: str, 
-                       entity_id: str, event_data: Dict[str, Any], 
-                       result_status: str = "success", error_message: str = None): # type: ignore
-        """Log audit event"""
-        try:
-            audit_log = AuditLog(
-                event_type=event_type,
-                entity_type=entity_type,
-                entity_id=entity_id,
-                event_data=json.dumps(event_data),
-                result_status=result_status,
-                error_message=error_message
-            )
-            session.add(audit_log)
-            session.commit()
-        except Exception as e:
-            logger.error(f"Failed to log audit event: {e}")
-    
     # Step 1: Retrieve Ideal Answer and Marks
-    def get_question_with_ideal_answer(self, question_id: str) -> Optional[Question]:
+    def get_question_with_ideal_answer(self, question_id: str) -> Optional[SimpleNamespace]:
         """
         Step 1: Retrieve ideal answer and marks for a question
         
@@ -60,13 +54,13 @@ class QuestionService:
             question_id: Unique identifier for the question
             
         Returns:
-            Question object with ideal answer and marks, or None if not found
+            Object with question fields, or None if not found
         """
         session = self.get_session()
         try:
-            question = session.query(Question).filter(
-                Question.question_id == question_id
-            ).first()
+            sql = text("SELECT TOP 1 * FROM questions WHERE question_id = :qid")
+            row = session.execute(sql, {"qid": question_id}).fetchone()
+            question = _row_to_ns(row)
             
             if question:
                 logger.info(f"Retrieved question {question_id}")
@@ -92,28 +86,19 @@ class QuestionService:
     def get_question_details(self, question_id: str) -> Optional[Dict[str, Any]]:
         """
         Get question details with key concepts count (for API responses)
-        
-        Args:
-            question_id: Unique identifier for the question
-            
-        Returns:
-            Dictionary with question details and key concepts count, or None if not found
         """
         session = self.get_session()
         try:
-            question = session.query(Question).filter(
-                Question.question_id == question_id
-            ).first()
-            
-            if not question:
+            q_sql = text("SELECT TOP 1 * FROM questions WHERE question_id = :qid")
+            row = session.execute(q_sql, {"qid": question_id}).fetchone()
+            if not row:
                 return None
+            question = _row_to_ns(row)
             
-            # Count key concepts while session is active
-            key_concepts_count = session.query(KeyConcept).filter(
-                KeyConcept.question_id == question.id
-            ).count()
+            count_sql = text("SELECT COUNT(*) AS cnt FROM key_concepts WHERE question_id = :qid")
+            cnt_row = session.execute(count_sql, {"qid": question.id}).fetchone()
+            key_concepts_count = (cnt_row[0] if cnt_row is not None else 0)
             
-            # Build response dict while session is active
             result = {
                 "id": question.id,
                 "question_id": question.question_id,
@@ -148,35 +133,30 @@ class QuestionService:
             session.close()
     
     def get_all_questions(self) -> List[Dict[str, Any]]:
-        """
-        Get all questions from the database with basic details
-        
-        Returns:
-            List of dictionaries with question details
-        """
+        """Get all questions from the database with basic details"""
         session = self.get_session()
         try:
-            questions = session.query(Question).all()
-            
-            result = []
-            for question in questions:
-                # Count key concepts for each question
-                key_concepts_count = session.query(KeyConcept).filter(
-                    KeyConcept.question_id == question.id
-                ).count()
-                
+            rows = session.execute(text("SELECT * FROM questions ORDER BY created_at DESC"))
+            result: List[Dict[str, Any]] = []
+            for row in rows:
+                q = _row_to_ns(row)
+                cnt_row = session.execute(
+                    text("SELECT COUNT(*) FROM key_concepts WHERE question_id = :qid"),
+                    {"qid": q.id}
+                ).fetchone()
+                key_concepts_count = cnt_row[0] if cnt_row else 0
                 result.append({
-                    "id": question.id,
-                    "question_id": question.question_id,
-                    "subject": question.subject,
-                    "topic": question.topic,
-                    "question_text": question.question_text,
-                    "max_marks": question.max_marks,
-                    "passing_threshold": question.passing_threshold,
-                    "difficulty_level": question.difficulty_level,
+                    "id": q.id,
+                    "question_id": q.question_id,
+                    "subject": q.subject,
+                    "topic": q.topic,
+                    "question_text": q.question_text,
+                    "max_marks": q.max_marks,
+                    "passing_threshold": q.passing_threshold,
+                    "difficulty_level": q.difficulty_level,
                     "key_concepts_count": key_concepts_count,
-                    "created_at": question.created_at.isoformat(),
-                    "updated_at": question.updated_at.isoformat()
+                    "created_at": q.created_at.isoformat() if getattr(q, "created_at", None) else None,
+                    "updated_at": q.updated_at.isoformat() if getattr(q, "updated_at", None) else None
                 })
             
             logger.info(f"Retrieved {len(result)} questions")
@@ -200,30 +180,24 @@ class QuestionService:
             session.close()
     
     # Step 2: Save Semantic Understanding (Key Concepts)
-    async def extract_and_save_key_concepts(self, question: Question) -> List[KeyConcept]:
+    async def extract_and_save_key_concepts(self, question: SimpleNamespace) -> List[SimpleNamespace]:
         """
         Step 2: Extract key concepts from ideal answer and save to database
-        
-        Args:
-            question: Question object with ideal answer
-            
-        Returns:
-            List of extracted and saved KeyConcept objects
         """
         session = self.get_session()
         try:
             # Check if concepts already exist
-            existing_concepts = session.query(KeyConcept).filter(
-                KeyConcept.question_id == question.id
-            ).all()
-            
-            if existing_concepts:
-                logger.info(f"Using existing {len(existing_concepts)} key concepts for question {question.question_id}")
-                return existing_concepts
+            exist_rows = session.execute(
+                text("SELECT * FROM key_concepts WHERE question_id = :qid"),
+                {"qid": question.id}
+            ).fetchall()
+            if exist_rows:
+                concepts = [_row_to_ns(r) for r in exist_rows]
+                logger.info(f"Using existing {len(concepts)} key concepts for question {question.question_id}")
+                return concepts
             
             # Extract key concepts using LLM
             logger.info(f"Extracting key concepts for question {question.question_id}")
-            
             concepts_data = await llm_service.extract_key_concepts(
                 question.ideal_answer,
                 question.subject,
@@ -233,21 +207,34 @@ class QuestionService:
             # Calculate points per concept (distribute total marks)
             points_per_concept = question.max_marks / len(concepts_data) if concepts_data else 0
             
-            # Save concepts to database
-            saved_concepts = []
-            for i, concept_data in enumerate(concepts_data):
-                key_concept = KeyConcept(
-                    question_id=question.id,
-                    concept_name=concept_data["concept"],
-                    concept_description=concept_data["explanation"],
-                    importance_score=concept_data["importance"],
-                    keywords=json.dumps(concept_data.get("keywords", [])),
-                    max_points=points_per_concept,
-                    extraction_method="llm_extracted"
+            # Save concepts to database with OUTPUT to get inserted IDs
+            saved_concepts: List[SimpleNamespace] = []
+            insert_sql = text(
+                """
+                INSERT INTO key_concepts (
+                    question_id, concept_name, concept_description, importance_score, keywords, max_points, extraction_method, created_at
                 )
-                session.add(key_concept)
-                saved_concepts.append(key_concept)
-            
+                OUTPUT INSERTED.id
+                VALUES (
+                    :question_id, :concept_name, :concept_description, :importance_score, :keywords, :max_points, :extraction_method, :created_at
+                )
+                """
+            )
+            now = datetime.utcnow()
+            for concept_data in concepts_data:
+                params = {
+                    "question_id": question.id,
+                    "concept_name": concept_data["concept"],
+                    "concept_description": concept_data["explanation"],
+                    "importance_score": concept_data["importance"],
+                    "keywords": json.dumps(concept_data.get("keywords", [])),
+                    "max_points": points_per_concept,
+                    "extraction_method": "llm_extracted",
+                    "created_at": now,
+                }
+                inserted = session.execute(insert_sql, params).fetchone()
+                new_id = inserted[0] if inserted else None
+                saved_concepts.append(SimpleNamespace(id=new_id, **params))
             session.commit()
             
             logger.info(f"Saved {len(saved_concepts)} key concepts for question {question.question_id}")
@@ -267,7 +254,6 @@ class QuestionService:
         except Exception as e:
             session.rollback()
             logger.error(f"Error extracting/saving key concepts for question {question.question_id}: {e}")
-            
             self.log_audit_event(
                 session, "concept_extraction", "question", question.question_id,
                 {}, "failure", str(e)
@@ -277,44 +263,43 @@ class QuestionService:
             session.close()
     
     # Step 3: Retrieve Student's Submitted Answer
-    def get_student_answer(self, student_id: str, question_id: str) -> Optional[StudentAnswer]:
-        """
-        Step 3: Retrieve student's submitted answer
-        
-        Args:
-            student_id: Student identifier
-            question_id: Question identifier
-            
-        Returns:
-            StudentAnswer object or None if not found
-        """
+    def get_student_answer(self, student_id: str, question_id: str) -> Optional[SimpleNamespace]:
+        """Retrieve student's submitted answer via direct SQL"""
         session = self.get_session()
         try:
-            # Join with Question to get question by question_id
-            student_answer = session.query(StudentAnswer).join(Question).filter(
-                StudentAnswer.student_id == student_id,
-                Question.question_id == question_id
-            ).first()
+            sql = text(
+                """
+                SELECT sa.*
+                FROM student_answers sa
+                INNER JOIN questions q ON sa.question_id = q.id
+                WHERE sa.student_id = :student_id AND q.question_id = :question_id
+                """
+            )
+            row = session.execute(sql, {"student_id": student_id, "question_id": question_id}).fetchone()
+            if not row:
+                return None
+            sa = _row_to_ns(row)
             
-            if student_answer:
-                # Update word count if not set
-                if not student_answer.word_count:
-                    student_answer.word_count = len(student_answer.answer_text.split())
-                    session.commit()
-                
-                logger.info(f"Retrieved answer from student {student_id} for question {question_id}")
-                
-                # Log audit event
-                self.log_audit_event(
-                    session, "student_answer_retrieval", "student_answer", str(student_answer.id),
-                    {
-                        "student_id": student_id,
-                        "question_id": question_id,
-                        "word_count": student_answer.word_count
-                    }
-                )
+            # Update word count if not set
+            if getattr(sa, "word_count", None) in (None, 0):
+                wc = len((sa.answer_text or "").split())
+                session.execute(text("UPDATE student_answers SET word_count = :wc WHERE id = :id"), {"wc": wc, "id": sa.id})
+                session.commit()
+                sa.word_count = wc
             
-            return student_answer
+            logger.info(f"Retrieved answer from student {student_id} for question {question_id}")
+            
+            # Log audit event
+            self.log_audit_event(
+                session, "student_answer_retrieval", "student_answer", str(sa.id),
+                {
+                    "student_id": student_id,
+                    "question_id": question_id,
+                    "word_count": sa.word_count
+                }
+            )
+            
+            return sa
             
         except SQLAlchemyError as e:
             logger.error(f"Database error retrieving student answer: {e}")
@@ -329,41 +314,39 @@ class QuestionService:
     # Step 4: Grade and Save Results
     async def grade_and_save_result(
         self, 
-        question: Question, 
-        student_answer: StudentAnswer, 
-        key_concepts: List[KeyConcept]
+        question: SimpleNamespace, 
+        student_answer: SimpleNamespace, 
+        key_concepts: List[SimpleNamespace]
     ) -> Dict[str, Any]:
         """
-        Step 4: Grade the student answer and save results in the required format
-        
-        Args:
-            question: Question with ideal answer
-            student_answer: Student's submitted answer
-            key_concepts: List of key concepts for the question
-            
-        Returns:
-            Dictionary with Score, Justification, and Key_Concepts_Covered
+        Grade the student answer and save results using direct SQL queries.
         """
         session = self.get_session()
         start_time = datetime.utcnow()
         
         try:
             # Check if already graded
-            existing_result = session.query(GradingResult).filter(
-                GradingResult.student_answer_id == student_answer.id
-            ).first()
-            
-            if existing_result:
+            existing_row = session.execute(
+                text("SELECT TOP 1 * FROM grading_results WHERE student_answer_id = :sid"),
+                {"sid": student_answer.id}
+            ).fetchone()
+            if existing_row:
                 logger.info(f"Using existing grading result for student {student_answer.student_id}")
-                return self._format_grading_response(existing_result, session)
+                return self._format_grading_response_raw(_row_to_ns(existing_row), session)
             
             # Prepare key concepts data for LLM
             concepts_data = []
             for concept in key_concepts:
+                keywords = []
+                if getattr(concept, "keywords", None):
+                    try:
+                        keywords = json.loads(concept.keywords)
+                    except Exception:
+                        keywords = []
                 concepts_data.append({
                     "concept": concept.concept_name,
                     "importance": concept.importance_score,
-                    "keywords": json.loads(concept.keywords) if concept.keywords else [],
+                    "keywords": keywords,
                     "explanation": concept.concept_description,
                     "max_points": concept.max_points
                 })
@@ -375,24 +358,23 @@ class QuestionService:
                 concepts_data
             )
             
-            # Prepare rubric data
-            rubric_criteria = session.query(RubricCriteria).filter(
-                RubricCriteria.question_id == question.id
-            ).all()
-            
-            if not rubric_criteria:
-                # Create default rubric based on key concepts
+            # Prepare rubric data (load from rubric_criteria if present)
+            rc_rows = session.execute(
+                text("SELECT * FROM rubric_criteria WHERE question_id = :qid"),
+                {"qid": question.id}
+            ).fetchall()
+            if not rc_rows:
                 rubric_data = {
                     "subject": question.subject,
                     "topic": question.topic,
                     "criteria": [
                         {
-                            "name": concept.concept_name,
-                            "description": concept.concept_description,
-                            "max_points": concept.max_points,
-                            "weight": concept.importance_score
+                            "name": c.concept_name,
+                            "description": c.concept_description,
+                            "max_points": c.max_points,
+                            "weight": c.importance_score
                         }
-                        for concept in key_concepts
+                        for c in key_concepts
                     ],
                     "total_max_points": question.max_marks,
                     "passing_threshold": question.passing_threshold
@@ -403,12 +385,12 @@ class QuestionService:
                     "topic": question.topic,
                     "criteria": [
                         {
-                            "name": criteria.criteria_name,
-                            "description": criteria.criteria_description,
-                            "max_points": criteria.max_points,
-                            "weight": criteria.weight
+                            "name": r._mapping["criteria_name"],
+                            "description": r._mapping["criteria_description"],
+                            "max_points": r._mapping["max_points"],
+                            "weight": r._mapping["weight"],
                         }
-                        for criteria in rubric_criteria
+                        for r in rc_rows
                     ],
                     "total_max_points": question.max_marks,
                     "passing_threshold": question.passing_threshold
@@ -430,147 +412,149 @@ class QuestionService:
             percentage = grading_result_data.get("percentage", 0)
             passed = grading_result_data.get("passed", percentage >= question.passing_threshold)
             
-            # Create grading result record
-            grading_result = GradingResult(
-                student_answer_id=student_answer.id,
-                total_score=total_score,
-                max_possible_score=question.max_marks,
-                percentage=percentage,
-                passed=passed,
-                semantic_similarity=semantic_analysis.get("overall_semantic_similarity", 0),
-                coherence_score=semantic_analysis.get("coherence_score", 0),
-                completeness_score=semantic_analysis.get("completeness_score", 0),
-                confidence_score=grading_result_data.get("confidence_score", 0.8),
-                detailed_feedback=grading_result_data.get("detailed_feedback", ""),
-                strengths=json.dumps(grading_result_data.get("strengths", [])),
-                weaknesses=json.dumps(grading_result_data.get("weaknesses", [])),
-                suggestions=json.dumps(grading_result_data.get("suggestions", [])),
-                grading_model=settings.llm_model,
-                processing_time_ms=processing_time,
-                raw_llm_response=json.dumps({
-                    "semantic_analysis": semantic_analysis,
-                    "grading_result": grading_result_data
-                }),
-                criteria_scores=json.dumps(grading_result_data.get("criteria_scores", {}))
+            # Insert grading result
+            result_uuid = str(uuid.uuid4())
+            insert_gr_sql = text(
+                """
+                INSERT INTO grading_results (
+                    result_id, student_answer_id, total_score, max_possible_score, percentage, passed,
+                    semantic_similarity, coherence_score, completeness_score, confidence_score,
+                    detailed_feedback, strengths, weaknesses, suggestions,
+                    grading_model, processing_time_ms, graded_at, graded_by, raw_llm_response, criteria_scores
+                )
+                OUTPUT INSERTED.id
+                VALUES (
+                    :result_id, :student_answer_id, :total_score, :max_possible_score, :percentage, :passed,
+                    :semantic_similarity, :coherence_score, :completeness_score, :confidence_score,
+                    :detailed_feedback, :strengths, :weaknesses, :suggestions,
+                    :grading_model, :processing_time_ms, GETUTCDATE(), :graded_by, :raw_llm_response, :criteria_scores
+                )
+                """
             )
-            
-            session.add(grading_result)
-            session.flush()  # Get the ID
+            params = {
+                "result_id": result_uuid,
+                "student_answer_id": student_answer.id,
+                "total_score": total_score,
+                "max_possible_score": question.max_marks,
+                "percentage": percentage,
+                "passed": passed,
+                "semantic_similarity": semantic_analysis.get("overall_semantic_similarity", 0),
+                "coherence_score": semantic_analysis.get("coherence_score", 0),
+                "completeness_score": semantic_analysis.get("completeness_score", 0),
+                "confidence_score": grading_result_data.get("confidence_score", 0.8),
+                "detailed_feedback": grading_result_data.get("detailed_feedback", ""),
+                "strengths": json.dumps(grading_result_data.get("strengths", [])),
+                "weaknesses": json.dumps(grading_result_data.get("weaknesses", [])),
+                "suggestions": json.dumps(grading_result_data.get("suggestions", [])),
+                "grading_model": settings.llm_model,
+                "processing_time_ms": processing_time,
+                "graded_by": "ai_examiner",
+                "raw_llm_response": json.dumps({"semantic_analysis": semantic_analysis, "grading_result": grading_result_data}),
+                "criteria_scores": json.dumps(grading_result_data.get("criteria_scores", {})),
+            }
+            gr_row = session.execute(insert_gr_sql, params).fetchone()
+            grading_result_id = gr_row[0] if gr_row else None
             
             # Create concept evaluations
             concept_evaluations_data = []
-            for i, concept in enumerate(key_concepts):
+            for c in key_concepts:
                 # Find matching concept evaluation from LLM response
                 concept_eval_data = None
                 for eval_data in semantic_analysis.get("concept_evaluations", []):
-                    if eval_data.get("concept", "").lower() in concept.concept_name.lower():
+                    if eval_data.get("concept", "").lower() in c.concept_name.lower():
                         concept_eval_data = eval_data
                         break
-                
                 if not concept_eval_data:
-                    # Create default evaluation
-                    concept_eval_data = {
-                        "present": False,
-                        "accuracy_score": 0.0,
-                        "explanation": "Concept not found in student answer",
-                        "evidence": None
-                    }
-                
-                points_awarded = concept_eval_data["accuracy_score"] * concept.max_points
-                
-                concept_evaluation = ConceptEvaluation(
-                    grading_result_id=grading_result.id,
-                    key_concept_id=concept.id,
-                    present=concept_eval_data["present"],
-                    accuracy_score=concept_eval_data["accuracy_score"],
-                    points_awarded=points_awarded,
-                    points_possible=concept.max_points,
-                    explanation=concept_eval_data["explanation"],
-                    evidence_text=concept_eval_data.get("evidence"),
-                    reasoning=f"Accuracy: {concept_eval_data['accuracy_score']:.2f}, Points: {points_awarded:.1f}/{concept.max_points}"
-                )
-                
-                session.add(concept_evaluation)
-                
-                # Add to response data
+                    concept_eval_data = {"present": False, "accuracy_score": 0.0, "explanation": "Concept not found in student answer", "evidence": None}
+                points_awarded = concept_eval_data["accuracy_score"] * c.max_points
+                session.execute(text(
+                    """
+                    INSERT INTO concept_evaluations (
+                        grading_result_id, key_concept_id, present, accuracy_score, points_awarded, points_possible,
+                        explanation, evidence_text, reasoning, evaluated_at
+                    ) VALUES (
+                        :grading_result_id, :key_concept_id, :present, :accuracy_score, :points_awarded, :points_possible,
+                        :explanation, :evidence_text, :reasoning, GETUTCDATE()
+                    )
+                    """
+                ), {
+                    "grading_result_id": grading_result_id,
+                    "key_concept_id": c.id,
+                    "present": concept_eval_data["present"],
+                    "accuracy_score": concept_eval_data["accuracy_score"],
+                    "points_awarded": points_awarded,
+                    "points_possible": c.max_points,
+                    "explanation": concept_eval_data["explanation"],
+                    "evidence_text": concept_eval_data.get("evidence"),
+                    "reasoning": f"Accuracy: {concept_eval_data['accuracy_score']:.2f}, Points: {points_awarded:.1f}/{c.max_points}",
+                })
                 concept_evaluations_data.append({
-                    "concept": concept.concept_name,
+                    "concept": c.concept_name,
                     "present": concept_eval_data["present"],
                     "points_awarded": points_awarded,
-                    "points_possible": concept.max_points,
-                    "reason": concept_eval_data["explanation"]
+                    "points_possible": c.max_points,
+                    "reason": concept_eval_data["explanation"],
                 })
-            
             session.commit()
             
             # Log successful grading
             self.log_audit_event(
-                session, "grading_completed", "grading_result", str(grading_result.id),
+                session, "grading_completed", "grading_result", str(grading_result_id),
                 {
                     "student_id": student_answer.student_id,
                     "question_id": question.question_id,
                     "total_score": total_score,
                     "percentage": percentage,
                     "passed": passed,
-                    "processing_time_ms": processing_time
+                    "processing_time_ms": processing_time,
                 }
             )
             
-            # Format response as requested
             response = {
                 "Score": f"{total_score:.1f}/{question.max_marks}",
                 "Justification": grading_result_data.get("detailed_feedback", ""),
                 "Key_Concepts_Covered": [
-                    f"{eval_data['concept']} ({eval_data['points_awarded']:.1f}/{eval_data['points_possible']:.1f} points) - {eval_data['reason']}"
-                    for eval_data in concept_evaluations_data
+                    f"{ev['concept']} ({ev['points_awarded']:.1f}/{ev['points_possible']:.1f} points) - {ev['reason']}"
+                    for ev in concept_evaluations_data
                 ],
                 "Percentage": f"{percentage:.1f}%",
                 "Passed": passed,
                 "ProcessingTimeMs": processing_time,
                 "ConfidenceScore": grading_result_data.get("confidence_score", 0.8),
-                "GradingResultId": grading_result.result_id
+                "GradingResultId": result_uuid,
             }
-            
             logger.info(f"Successfully graded answer for student {student_answer.student_id}: {total_score:.1f}/{question.max_marks}")
-            
             return response
-            
         except Exception as e:
             session.rollback()
             logger.error(f"Error grading student answer: {e}")
-            
             # Log error
             self.log_audit_event(
                 session, "grading_failed", "student_answer", str(student_answer.id),
-                {
-                    "student_id": student_answer.student_id,
-                    "question_id": question.question_id,
-                    "error": str(e)
-                },
+                {"student_id": student_answer.student_id, "question_id": question.question_id, "error": str(e)},
                 "failure", str(e)
             )
-            
             raise
         finally:
             session.close()
-    
-    def _format_grading_response(self, grading_result: GradingResult, session: Session) -> Dict[str, Any]:
-        """Format existing grading result into the required response format"""
-        from sqlalchemy.orm import joinedload
-        
-        # Get concept evaluations with eager loading of key_concept
-        concept_evaluations = session.query(ConceptEvaluation).options(
-            joinedload(ConceptEvaluation.key_concept)
-        ).filter(
-            ConceptEvaluation.grading_result_id == grading_result.id
-        ).all()
-        
+
+    def _format_grading_response_raw(self, grading_result: SimpleNamespace, session: Session) -> Dict[str, Any]:
+        """Format existing grading result (raw SQL) into the required response format"""
+        rows = session.execute(text(
+            """
+            SELECT ce.*, kc.concept_name, kc.max_points
+            FROM concept_evaluations ce
+            INNER JOIN key_concepts kc ON ce.key_concept_id = kc.id
+            WHERE ce.grading_result_id = :gid
+            ORDER BY ce.id ASC
+            """
+        ), {"gid": grading_result.id}).fetchall()
         key_concepts_covered = []
-        for eval in concept_evaluations:
+        for row in rows:
+            m = row._mapping if hasattr(row, "_mapping") else row
             key_concepts_covered.append(
-                f"{eval.key_concept.concept_name} ({eval.points_awarded:.1f}/{eval.points_possible:.1f} points) - {eval.explanation}"
+                f"{m['concept_name']} ({m['points_awarded']:.1f}/{m['points_possible']:.1f} points) - {m['explanation']}"
             )
-        
         return {
             "Score": f"{grading_result.total_score:.1f}/{grading_result.max_possible_score}",
             "Justification": grading_result.detailed_feedback,
@@ -579,7 +563,7 @@ class QuestionService:
             "Passed": grading_result.passed,
             "ProcessingTimeMs": grading_result.processing_time_ms,
             "ConfidenceScore": grading_result.confidence_score,
-            "GradingResultId": grading_result.result_id
+            "GradingResultId": grading_result.result_id,
         }
     
     # Complete Workflow Method
@@ -624,27 +608,33 @@ class QuestionService:
     # Utility Methods for Data Management
     def create_question(self, question_id: str, subject: str, topic: str, 
                        question_text: str, ideal_answer: str, max_marks: float,
-                       passing_threshold: float = 60.0, difficulty_level: str = "intermediate") -> Question:
-        """Create a new question with ideal answer"""
+                       passing_threshold: float = 60.0, difficulty_level: str = "intermediate") -> SimpleNamespace:
+        """Create a new question with ideal answer (raw SQL)"""
         session = self.get_session()
         try:
-            question = Question(
-                question_id=question_id,
-                subject=subject,
-                topic=topic,
-                question_text=question_text,
-                ideal_answer=ideal_answer,
-                max_marks=max_marks,
-                passing_threshold=passing_threshold,
-                difficulty_level=difficulty_level
-            )
-            session.add(question)
+            row = session.execute(text(
+                """
+                INSERT INTO questions (
+                    question_id, subject, topic, question_text, ideal_answer, max_marks, passing_threshold, difficulty_level, created_at, updated_at
+                )
+                OUTPUT INSERTED.id
+                VALUES (:question_id, :subject, :topic, :question_text, :ideal_answer, :max_marks, :passing_threshold, :difficulty_level, GETUTCDATE(), GETUTCDATE())
+                """
+            ), {
+                "question_id": question_id,
+                "subject": subject,
+                "topic": topic,
+                "question_text": question_text,
+                "ideal_answer": ideal_answer,
+                "max_marks": max_marks,
+                "passing_threshold": passing_threshold,
+                "difficulty_level": difficulty_level,
+            }).fetchone()
+            qid = row[0] if row else None
+            sel = session.execute(text("SELECT * FROM questions WHERE id = :id"), {"id": qid}).fetchone()
             session.commit()
-            session.refresh(question)
-            
             logger.info(f"Created question {question_id}")
-            return question
-            
+            return _row_to_ns(sel)
         except SQLAlchemyError as e:
             session.rollback()
             logger.error(f"Error creating question {question_id}: {e}")
@@ -653,41 +643,36 @@ class QuestionService:
             session.close()
     
     def create_student_answer(self, student_id: str, question_id: str, 
-                            answer_text: str, language: str = "en") -> StudentAnswer:
-        """Create a new student answer"""
+                            answer_text: str, language: str = "en") -> SimpleNamespace:
+        """Create a new student answer (raw SQL)"""
         session = self.get_session()
         try:
-            # Get question
-            # question = session.query(Question).filter(
-            #     Question.question_id == question_id
-            # ).first()
-            
-            
-            question = session.query(Question).options(
-                joinedload(Question.key_concepts)
-            ).filter(
-                Question.question_id == question_id
-            ).first()
-            
-            
-            
-            if not question:
+            qrow = session.execute(text("SELECT id FROM questions WHERE question_id = :qid"), {"qid": question_id}).fetchone()
+            if not qrow:
                 raise ValueError(f"Question {question_id} not found")
-            
-            student_answer = StudentAnswer(
-                student_id=student_id,
-                question_id=question.id,
-                answer_text=answer_text,
-                language=language,
-                word_count=len(answer_text.split())
-            )
-            session.add(student_answer)
+            qid = qrow[0]
+            wc = len((answer_text or "").split())
+            row = session.execute(text(
+                """
+                INSERT INTO student_answers (
+                    answer_id, student_id, question_id, answer_text, language, word_count, submitted_at
+                )
+                OUTPUT INSERTED.id
+                VALUES (:answer_id, :student_id, :question_id, :answer_text, :language, :word_count, GETUTCDATE())
+                """
+            ), {
+                "answer_id": str(uuid.uuid4()),
+                "student_id": student_id,
+                "question_id": qid,
+                "answer_text": answer_text,
+                "language": language,
+                "word_count": wc,
+            }).fetchone()
+            aid = row[0] if row else None
+            sel = session.execute(text("SELECT * FROM student_answers WHERE id = :id"), {"id": aid}).fetchone()
             session.commit()
-            session.refresh(student_answer)
-            
             logger.info(f"Created student answer for {student_id}, question {question_id}")
-            return student_answer
-            
+            return _row_to_ns(sel)
         except SQLAlchemyError as e:
             session.rollback()
             logger.error(f"Error creating student answer: {e}")
@@ -696,19 +681,22 @@ class QuestionService:
             session.close()
     
     def get_grading_results_by_student(self, student_id: str) -> List[Dict[str, Any]]:
-        """Get all grading results for a student"""
+        """Get all grading results for a student (raw SQL)"""
         session = self.get_session()
         try:
-            results = session.query(GradingResult).join(StudentAnswer).filter(
-                StudentAnswer.student_id == student_id
-            ).all()
-            
-            formatted_results = []
-            for result in results:
-                formatted_results.append(self._format_grading_response(result, session))
-            
+            rows = session.execute(text(
+                """
+                SELECT gr.*
+                FROM grading_results gr
+                INNER JOIN student_answers sa ON gr.student_answer_id = sa.id
+                WHERE sa.student_id = :student_id
+                ORDER BY gr.graded_at DESC
+                """
+            ), {"student_id": student_id}).fetchall()
+            formatted_results: List[Dict[str, Any]] = []
+            for row in rows:
+                formatted_results.append(self._format_grading_response_raw(_row_to_ns(row), session))
             return formatted_results
-            
         except SQLAlchemyError as e:
             logger.error(f"Error retrieving grading results for student {student_id}: {e}")
             return []

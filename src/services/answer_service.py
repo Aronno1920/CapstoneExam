@@ -1,24 +1,21 @@
 """
 Answer Service for Student Answer Operations
-Handles student answer CRUD operations and related functionality
+Handles student answer CRUD operations and related functionality (raw SQL)
 """
 import json
 import logging
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
 from ..utils.database_manager import DatabaseManager
-from ..models.db_schemas import (
-    Question, StudentAnswer, GradingResult, AuditLog
-)
 
 logger = logging.getLogger(__name__)
 
 
 class AnswerService:
-    """Answer service for student answer operations"""
+    """Answer service for student answer operations using direct queries"""
     
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
@@ -27,62 +24,41 @@ class AnswerService:
         """Get database session"""
         return self.db_manager.get_session()
     
-    def log_audit_event(self, session: Session, event_type: str, entity_type: str, 
-                       entity_id: str, event_data: Dict[str, Any], 
-                       result_status: str = "success", error_message: str = None): # type: ignore
-        """Log audit event"""
-        try:
-            audit_log = AuditLog(
-                event_type=event_type,
-                entity_type=entity_type,
-                entity_id=entity_id,
-                event_data=json.dumps(event_data),
-                result_status=result_status,
-                error_message=error_message
-            )
-            session.add(audit_log)
-            session.commit()
-        except Exception as e:
-            logger.error(f"Failed to log audit event: {e}")
-    
-    def get_student_answer(self, student_id: str, question_id: str) -> Optional[StudentAnswer]:
-        """
-        Get student's submitted answer
-        
-        Args:
-            student_id: Student identifier
-            question_id: Question identifier
-            
-        Returns:
-            StudentAnswer object or None if not found
-        """
+    def get_student_answer(self, student_id: str, question_id: str) -> Optional[Any]:
+        """Get student's submitted answer via direct SQL"""
         session = self.get_session()
         try:
-            # Join with Question to get question by question_id
-            student_answer = session.query(StudentAnswer).join(Question).filter(
-                StudentAnswer.student_id == student_id,
-                Question.question_id == question_id
-            ).first()
+            sql = text(
+                """
+                SELECT sa.*
+                FROM student_answers sa
+                INNER JOIN questions q ON sa.question_id = q.id
+                WHERE sa.student_id = :student_id AND q.question_id = :question_id
+                """
+            )
+            row = session.execute(sql, {"student_id": student_id, "question_id": question_id}).fetchone()
+            if not row:
+                return None
+            sa = row._mapping if hasattr(row, "_mapping") else row
             
-            if student_answer:
-                # Update word count if not set
-                if not student_answer.word_count:
-                    student_answer.word_count = len(student_answer.answer_text.split())
-                    session.commit()
-                
-                logger.info(f"Retrieved answer from student {student_id} for question {question_id}")
-                
-                # Log audit event
-                self.log_audit_event(
-                    session, "student_answer_retrieval", "student_answer", str(student_answer.id),
-                    {
-                        "student_id": student_id,
-                        "question_id": question_id,
-                        "word_count": student_answer.word_count
-                    }
-                )
+            # Update word count if not set
+            if not sa["word_count"]:
+                wc = len((sa["answer_text"] or "").split())
+                session.execute(text("UPDATE student_answers SET word_count = :wc WHERE id = :id"), {"wc": wc, "id": sa["id"]})
+                session.commit()
+                sa = dict(sa)
+                sa["word_count"] = wc
             
-            return student_answer
+            logger.info(f"Retrieved answer from student {student_id} for question {question_id}")
+            
+            # Log audit event
+            self.log_audit_event(
+                session, "student_answer_retrieval", "student_answer", str(sa["id"]),
+                {"student_id": student_id, "question_id": question_id, "word_count": sa["word_count"]}
+            )
+            
+            # Return a simple namespace-like dict access via attribute in routers
+            return type("Obj", (), sa) if isinstance(sa, dict) else sa
             
         except SQLAlchemyError as e:
             logger.error(f"Database error retrieving student answer: {e}")
@@ -95,36 +71,34 @@ class AnswerService:
             session.close()
     
     def get_all_student_answers(self) -> List[Dict[str, Any]]:
-        """
-        Get all student answers from the database
-        
-        Returns:
-            List of student answer dictionaries
-        """
+        """Get all student answers from the database"""
         session = self.get_session()
         try:
-            # Query with join to get question details
-            answers = session.query(StudentAnswer, Question).join(
-                Question, StudentAnswer.question_id == Question.id
-            ).all()
-            
-            result = []
-            for student_answer, question in answers:
+            rows = session.execute(text(
+                """
+                SELECT sa.*, q.question_id, q.question_text
+                FROM student_answers sa
+                INNER JOIN questions q ON sa.question_id = q.id
+                ORDER BY sa.submitted_at DESC
+                """
+            )).fetchall()
+            result: List[Dict[str, Any]] = []
+            for row in rows:
+                m = row._mapping if hasattr(row, "_mapping") else row
+                qt = m["question_text"] or ""
                 result.append({
-                    "id": student_answer.id,
-                    "answer_id": student_answer.answer_id,
-                    "student_id": student_answer.student_id,
-                    "question_id": question.question_id,
-                    "question_text": question.question_text[:100] + "..." if len(question.question_text) > 100 else question.question_text,
-                    "answer_text": student_answer.answer_text,
-                    "word_count": student_answer.word_count,
-                    "submitted_at": student_answer.submitted_at.isoformat(),
-                    "language": student_answer.language
+                    "id": m["id"],
+                    "answer_id": m["answer_id"],
+                    "student_id": m["student_id"],
+                    "question_id": m["question_id"],
+                    "question_text": qt[:100] + ("..." if len(qt) > 100 else ""),
+                    "answer_text": m["answer_text"],
+                    "word_count": m["word_count"],
+                    "submitted_at": m["submitted_at"].isoformat() if m["submitted_at"] else None,
+                    "language": m["language"],
                 })
-            
             logger.info(f"Retrieved {len(result)} student answers")
             return result
-            
         except SQLAlchemyError as e:
             logger.error(f"Error retrieving student answers: {e}")
             return []
@@ -132,39 +106,35 @@ class AnswerService:
             session.close()
     
     def get_student_answers_by_student(self, student_id: str) -> List[Dict[str, Any]]:
-        """
-        Get all answers for a specific student
-        
-        Args:
-            student_id: Student identifier
-            
-        Returns:
-            List of student answer dictionaries
-        """
+        """Get all answers for a specific student"""
         session = self.get_session()
         try:
-            # Query with join to get question details
-            answers = session.query(StudentAnswer, Question).join(
-                Question, StudentAnswer.question_id == Question.id
-            ).filter(StudentAnswer.student_id == student_id).all()
-            
-            result = []
-            for student_answer, question in answers:
+            rows = session.execute(text(
+                """
+                SELECT sa.*, q.question_id, q.question_text
+                FROM student_answers sa
+                INNER JOIN questions q ON sa.question_id = q.id
+                WHERE sa.student_id = :student_id
+                ORDER BY sa.submitted_at DESC
+                """
+            ), {"student_id": student_id}).fetchall()
+            result: List[Dict[str, Any]] = []
+            for row in rows:
+                m = row._mapping if hasattr(row, "_mapping") else row
+                qt = m["question_text"] or ""
                 result.append({
-                    "id": student_answer.id,
-                    "answer_id": student_answer.answer_id,
-                    "student_id": student_answer.student_id,
-                    "question_id": question.question_id,
-                    "question_text": question.question_text[:100] + "..." if len(question.question_text) > 100 else question.question_text,
-                    "answer_text": student_answer.answer_text,
-                    "word_count": student_answer.word_count,
-                    "submitted_at": student_answer.submitted_at.isoformat(),
-                    "language": student_answer.language
+                    "id": m["id"],
+                    "answer_id": m["answer_id"],
+                    "student_id": m["student_id"],
+                    "question_id": m["question_id"],
+                    "question_text": qt[:100] + ("..." if len(qt) > 100 else ""),
+                    "answer_text": m["answer_text"],
+                    "word_count": m["word_count"],
+                    "submitted_at": m["submitted_at"].isoformat() if m["submitted_at"] else None,
+                    "language": m["language"],
                 })
-            
             logger.info(f"Retrieved {len(result)} answers for student {student_id}")
             return result
-            
         except SQLAlchemyError as e:
             logger.error(f"Error retrieving answers for student {student_id}: {e}")
             return []

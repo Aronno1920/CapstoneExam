@@ -9,10 +9,6 @@ from pydantic import BaseModel
 
 from ...utils.database_manager import DatabaseManager
 from ...services.question_service import QuestionService
-from ...models.db_schemas import (
-    Question, KeyConcept, RubricCriteria, StudentAnswer, GradingResult, ConceptEvaluation, GradingSession, AuditLog
-)
-
 
 logger = logging.getLogger(__name__)
 

@@ -1,19 +1,8 @@
 """
-SQLAlchemy Database Models for MSSQL Server Integration
+SQLAlchemy Database Manager for MSSQL Server Integration (raw SQL usage)
 """
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Boolean, ForeignKey, JSON
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker
 from sqlalchemy import create_engine
-from datetime import datetime
-import uuid
-
-from ..models.db_schemas import (
-    Question, KeyConcept, RubricCriteria, StudentAnswer, GradingResult, 
-    ConceptEvaluation, GradingSession, AuditLog )
-
-
-Base = declarative_base()
+from sqlalchemy.orm import sessionmaker
 
 
 # Database connection and session management
@@ -26,7 +15,7 @@ class DatabaseManager:
         self.initialize_database()
     
     def initialize_database(self):
-        """Initialize database connection and create tables"""
+        """Initialize database connection"""
         try:
             self.engine = create_engine(
                 self.connection_string,
@@ -34,9 +23,6 @@ class DatabaseManager:
                 pool_pre_ping=True,
                 pool_recycle=3600
             )
-            
-            # Create all tables
-            Base.metadata.create_all(bind=self.engine)
             
             # Create session factory
             self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
