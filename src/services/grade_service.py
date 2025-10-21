@@ -224,7 +224,7 @@ class ResponseEvaluator:
 
 class GradeService:
     
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(self, db_manager: DatabaseManager = None):
         self.semantic_analyzer = SemanticAnalyzer()
         self.response_evaluator = ResponseEvaluator()
         self.llm_service = llm_service
@@ -232,6 +232,8 @@ class GradeService:
     
     def get_session(self) -> Session:
         """Get database session"""
+        if self.db_manager is None:
+            raise RuntimeError("Database manager not available - this service is running in in-memory mode")
         return self.db_manager.get_session()
     
 ##################################################    

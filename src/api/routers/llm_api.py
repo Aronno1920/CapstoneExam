@@ -16,6 +16,9 @@ from ...models.schemas import (
 from ...services.grade_service import GradeService, GradingError
 from ...services.llm_service import llm_service, LLMError
 
+# Initialize grade service (in-memory, no database required)
+gradeService = GradeService(None)
+
 logger = logging.getLogger(__name__)
 
 # Router for LLM operations

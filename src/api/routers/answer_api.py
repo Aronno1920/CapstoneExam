@@ -100,7 +100,7 @@ async def get_all_ideal_answers() -> List[Question]:
     check_answer_service()
     
     try:
-        ideal_answers = answer_service.get_all_ideal_answers()
+        ideal_answers = await answer_service.get_all_ideal_answers()
         
         if not ideal_answers:
             raise HTTPException(status_code=404, detail=f"Question {ideal_answers} not found")
@@ -118,7 +118,7 @@ async def get_ideal_answer_by_question(question_id: int) -> Question:
     check_answer_service()
     
     try:
-        ideal_answer = answer_service.get_ideal_answer_by_question_id(question_id)
+        ideal_answer = await answer_service.get_ideal_answer_by_question_id(question_id)
         
         if not ideal_answer:
             raise HTTPException(status_code=404, detail=f"Ideal answer not found for question {question_id}")
@@ -138,7 +138,7 @@ async def get_all_student_answers() -> Dict[str, Any]:
     check_answer_service()
     
     try:
-        answers = answer_service.get_all_student_answers()
+        answers = await answer_service.get_all_student_answers()
         
         return {
             "student_answers": answers,
@@ -157,7 +157,7 @@ async def get_student_answers(student_id: int) -> Dict[str, Any]:
     check_answer_service()
     
     try:
-        answers = answer_service.get_student_answers_by_student(student_id)
+        answers = await answer_service.get_student_answers_by_student(student_id)
         
         return {
             "student_id": student_id,
@@ -177,7 +177,7 @@ async def get_student_answer(student_id: int, question_id: int) -> Dict[str, Any
     check_answer_service()
     
     try:
-        student_answer = answer_service.get_student_answer(student_id, question_id)
+        student_answer = await answer_service.get_student_answer(student_id, question_id)
         if not student_answer:
             raise HTTPException(
                 status_code=404, 
@@ -207,7 +207,7 @@ async def get_answer_statistics() -> Dict[str, Any]:
     check_answer_service()
     
     try:
-        all_answers = answer_service.get_all_student_answers()
+        all_answers = await answer_service.get_all_student_answers()
         
         # Calculate basic statistics
         total_answers = len(all_answers)
