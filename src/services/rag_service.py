@@ -54,7 +54,7 @@ class RAGService:
         """
         session = self.get_session()
         try:
-            sql = text("SELECT TOP 1 * FROM questions WHERE question_id = :qid")
+            sql = text("SELECT TOP 1 * FROM Question_Bank WHERE question_id = :qid")
             row = session.execute(sql, {"qid": question_id}).fetchone()
             question = _row_to_ns(row)
             
@@ -78,7 +78,7 @@ class RAGService:
         try:
             # Check if concepts already exist
             exist_rows = session.execute(
-                text("SELECT * FROM key_concepts WHERE question_id = :qid"),
+                text("SELECT * FROM Question_KeyConcept WHERE question_id = :qid"),
                 {"qid": question.question_id}
             ).fetchall()
             if exist_rows:
@@ -101,7 +101,7 @@ class RAGService:
             saved_concepts: List[SimpleNamespace] = []
             insert_sql = text(
                 """
-                INSERT INTO key_concepts (
+                INSERT INTO Question_KeyConcept (
                     question_id, concept_name, concept_description, importance_score, keywords, max_points, created_at
                 )
                 OUTPUT INSERTED.key_id
@@ -149,7 +149,7 @@ class RAGService:
             sql = text(
                 """
                 SELECT sa.*
-                FROM student_answers sa
+                FROM Student_Answers sa
                 INNER JOIN questions q ON sa.question_id = q.id
                 WHERE sa.student_id = :student_id AND q.question_id = :question_id
                 """
@@ -162,7 +162,7 @@ class RAGService:
             # Update word count if not set
             if getattr(sa, "word_count", None) in (None, 0):
                 wc = len((sa.answer_text or "").split())
-                session.execute(text("UPDATE student_answers SET word_count = :wc WHERE id = :id"), {"wc": wc, "id": sa.id})
+                session.execute(text("UPDATE Student_Answers SET word_count = :wc WHERE id = :id"), {"wc": wc, "id": sa.id})
                 session.commit()
                 sa.word_count = wc
             

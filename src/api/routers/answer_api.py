@@ -7,6 +7,8 @@ import logging
 from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
+from urllib.parse import quote_plus
+from sqlalchemy import text
 
 from ...utils.database_manager import DatabaseManager
 from ...services.answer_service import AnswerService
@@ -190,4 +192,51 @@ async def get_answer_statistics() -> Dict[str, Any]:
         
     except Exception as e:
         logger.error(f"Error calculating answer statistics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Ideal Answer Endpoints
+@router.get("/ideal-answers")
+async def get_all_ideal_answers() -> Dict[str, Any]:
+    """Get all ideal answers from the database"""
+    check_answer_service()
+    
+    try:
+        ideal_answers = answer_service.get_all_ideal_answers()
+        
+        return {
+            "ideal_answers": ideal_answers,
+            "total_count": len(ideal_answers),
+            "status": "success"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error retrieving all ideal answers: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/ideal-answers/{question_id}")
+async def get_ideal_answer_by_question(question_id: str) -> Dict[str, Any]:
+    """Get ideal answer for a specific question"""
+    check_answer_service()
+    
+    try:
+        ideal_answer = answer_service.get_ideal_answer_by_question_id(question_id)
+        
+        if not ideal_answer:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Ideal answer not found for question {question_id}"
+            )
+        
+        return {
+            "question_id": question_id,
+            "ideal_answer": ideal_answer,
+            "status": "success"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving ideal answer for question {question_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -41,7 +41,7 @@ class QuestionService:
     def get_question_by_id(self, question_id: str) -> Optional[Question]:
         session = self.get_session()
         try:
-            q_sql = text("SELECT TOP 1 * FROM questions WHERE question_id = :qid")
+            q_sql = text("SELECT TOP 1 * FROM Question_Bank WHERE question_id = :qid")
             row = session.execute(q_sql, {"qid": question_id}).fetchone()
             if not row:
                 return None
@@ -50,7 +50,7 @@ class QuestionService:
             question = _row_to_ns(row)
 
             # Count associated key concepts
-            count_sql = text("SELECT COUNT(*) AS cnt FROM key_concepts WHERE question_id = :qid")
+            count_sql = text("SELECT COUNT(*) AS cnt FROM Question_KeyConcept WHERE question_id = :qid")
             cnt_row = session.execute(count_sql, {"qid": question.question_id}).fetchone()
             key_concepts_count = cnt_row[0] if cnt_row else 0
 
@@ -83,7 +83,7 @@ class QuestionService:
 
         try:
             # Fetch all question rows ordered by creation time
-            q_sql = text("SELECT * FROM questions ORDER BY created_at DESC")
+            q_sql = text("SELECT * FROM Question_Bank ORDER BY Question_ID DESC")
             rows = session.execute(q_sql).fetchall()
 
             for row in rows:
@@ -119,7 +119,7 @@ class QuestionService:
         try:
             row = session.execute(text(
                 """
-                INSERT INTO questions (
+                INSERT INTO Question_Bank (
                     question_id, subject, topic, question_text, ideal_answer, max_marks, passing_threshold
                 )
                 OUTPUT INSERTED.id
@@ -135,7 +135,7 @@ class QuestionService:
                 "passing_threshold": passing_threshold,
             }).fetchone()
             qid = row[0] if row else None
-            sel = session.execute(text("SELECT * FROM questions WHERE id = :id"), {"id": qid}).fetchone()
+            sel = session.execute(text("SELECT * FROM Question_Bank WHERE question_id = :id"), {"id": qid}).fetchone()
             session.commit()
             logger.info(f"Created question {question_id}")
             return _row_to_ns(sel)
@@ -152,14 +152,14 @@ class QuestionService:
         """Create a new student answer (raw SQL)"""
         session = self.get_session()
         try:
-            qrow = session.execute(text("SELECT id FROM questions WHERE question_id = :qid"), {"qid": question_id}).fetchone()
+            qrow = session.execute(text("SELECT id FROM Question_Bank WHERE question_id = :qid"), {"qid": question_id}).fetchone()
             if not qrow:
                 raise ValueError(f"Question {question_id} not found")
             qid = qrow[0]
             wc = len((answer_text or "").split())
             row = session.execute(text(
                 """
-                INSERT INTO student_answers (
+                INSERT INTO Student_Answers (
                     answer_id, student_id, question_id, answer_text, language, word_count, submitted_at
                 )
                 OUTPUT INSERTED.id
@@ -174,7 +174,7 @@ class QuestionService:
                 "word_count": wc,
             }).fetchone()
             aid = row[0] if row else None
-            sel = session.execute(text("SELECT * FROM student_answers WHERE id = :id"), {"id": aid}).fetchone()
+            sel = session.execute(text("SELECT * FROM Student_Answers WHERE id = :id"), {"id": aid}).fetchone()
             session.commit()
             logger.info(f"Created student answer for {student_id}, question {question_id}")
             return _row_to_ns(sel)
@@ -194,7 +194,7 @@ class QuestionService:
                 """
                 SELECT gr.*
                 FROM grading_results gr
-                INNER JOIN student_answers sa ON gr.student_answer_id = sa.id
+                INNER JOIN Student_Answers sa ON gr.student_answer_id = sa.id
                 WHERE sa.student_id = :student_id
                 ORDER BY gr.graded_at DESC
                 """

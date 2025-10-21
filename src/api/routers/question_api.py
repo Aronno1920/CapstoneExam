@@ -9,11 +9,10 @@ from urllib.parse import quote_plus
 from sqlalchemy import text
 
 from src.models.question_model import Question
-
-from ...utils.database_manager import DatabaseManager
-from ...services.question_service import QuestionService
-from ...services.rag_service import RAGService
-from ...utils.config import settings
+from src.utils.database_manager import DatabaseManager
+from src.services.question_service import QuestionService
+from src.services.rag_service import RAGService
+from src.utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +49,8 @@ def check_question_service():
             finally:
                 session.close()
         except Exception:
-            question_service = None
-            rag_service = None
+            question_service = None # type: ignore
+            rag_service = None # type: ignore
             ndb_manager = None  # type: ignore
 
     try:
@@ -132,9 +131,8 @@ async def get_question_concepts(question_id: str) -> Dict[str, Any]:
         session = ndb_manager.get_session()
         try:
             sql = text("""
-                SELECT key_id, concept_name, concept_description, importance_score, 
-                       keywords, max_points, created_at
-                FROM key_concepts 
+                SELECT key_id, concept_name, concept_description, importance_score, keywords, max_points, created_at
+                FROM Question_KeyConcept 
                 WHERE question_id = :question_id
                 ORDER BY importance_score DESC, created_at ASC
             """)
