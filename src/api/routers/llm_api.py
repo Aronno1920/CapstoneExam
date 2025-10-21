@@ -138,10 +138,7 @@ async def extract_key_concepts(ideal_answer: IdealAnswer) -> Dict[str, Any]:
 
 
 @router.post("/analyze/similarity")
-async def analyze_semantic_similarity(
-    ideal_answer: IdealAnswer,
-    student_answer: StudentAnswer
-) -> Dict[str, Any]:
+async def analyze_semantic_similarity(ideal_answer: IdealAnswer, student_answer: StudentAnswer) -> Dict[str, Any]:
     """
     Analyze semantic similarity between ideal and student answers using LLM
     

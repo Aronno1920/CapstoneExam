@@ -40,7 +40,7 @@ class QuestionService:
 
 ###########################################
 
-    async def get_question_by_id(self, question_id: str) -> Optional[Question]:
+    async def get_question_by_id(self, question_id: int) -> Optional[Question]:
         session = self.get_session()
         try:
             q_sql = text("SELECT TOP 1 * FROM Question_Bank WHERE question_id = :qid")
@@ -113,7 +113,7 @@ class QuestionService:
             session.close()
     
 
-    async def create_question(self, question_id: str, subject: str, topic: str, 
+    async def create_question(self, question_id: int, subject: str, topic: str, 
                        question_text: str, ideal_answer: str, max_marks: float,
                        passing_threshold: float = 60.0, difficulty_level: str = "intermediate") -> SimpleNamespace:
         """Create a new question with ideal answer (raw SQL)"""
@@ -149,7 +149,7 @@ class QuestionService:
             session.close()
     
     
-    async def create_student_answer(self, student_id: str, question_id: str, 
+    async def create_student_answer(self, student_id: int, question_id: int, 
                             answer_text: str, language: str = "en") -> SimpleNamespace:
         """Create a new student answer (raw SQL)"""
         session = self.get_session()
@@ -188,7 +188,7 @@ class QuestionService:
             session.close()
     
 
-    async def get_grading_results_by_student(self, student_id: str) -> List[Dict[str, Any]]:
+    async def get_grading_results_by_student(self, student_id: int) -> List[Dict[str, Any]]:
         """Get all grading results for a student (raw SQL)"""
         session = self.get_session()
         try:

@@ -10,12 +10,13 @@ from pydantic import BaseModel
 from urllib.parse import quote_plus
 from sqlalchemy import text
 
+from src.models.question_model import Question
 from src.models.answer_model import Answer
 
-from ...utils.database_manager import DatabaseManager
-from ...services.answer_service import AnswerService
-from ...services.rag_service import RAGService
-from ...utils.config import settings
+from src.utils.database_manager import DatabaseManager
+from src.services.answer_service import AnswerService
+from src.services.rag_service import RAGService
+from src.utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -89,30 +90,30 @@ def check_answer_service():
             status_code=503,
             detail=f"Question service not available. Database init failed: {e}"
         )
-        
 
-# Ideal Answer Endpoints
+
+############################################
+
 @router.get("/ideal-answers")
-async def get_all_ideal_answers() -> List[Answer]:
+async def get_all_ideal_answers() -> List[Question]:
     """Get all ideal answers from the database"""
     check_answer_service()
     
     try:
         ideal_answers = answer_service.get_all_ideal_answers()
         
-        return {
-            "ideal_answers": ideal_answers,
-            "total_count": len(ideal_answers),
-            "status": "success"
-        }
+        if not ideal_answers:
+            raise HTTPException(status_code=404, detail=f"Question {ideal_answers} not found")
         
+        return ideal_answers
+    
     except Exception as e:
         logger.error(f"Error retrieving all ideal answers: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/ideal-answers/{question_id}")
-async def get_ideal_answer_by_question(question_id: str) -> Answer:
+async def get_ideal_answer_by_question(question_id: int) -> Question:
     """Get ideal answer for a specific question"""
     check_answer_service()
     
@@ -120,22 +121,15 @@ async def get_ideal_answer_by_question(question_id: str) -> Answer:
         ideal_answer = answer_service.get_ideal_answer_by_question_id(question_id)
         
         if not ideal_answer:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Ideal answer not found for question {question_id}"
-            )
-        return {
-            "question_id": question_id,
-            "ideal_answer": ideal_answer,
-            "status": "success"
-        }
+            raise HTTPException(status_code=404, detail=f"Ideal answer not found for question {question_id}")
+            
+        return ideal_answer
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error retrieving ideal answer for question {question_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 
 @router.get("/all")
@@ -158,7 +152,7 @@ async def get_all_student_answers() -> Dict[str, Any]:
 
 
 @router.get("/student/{student_id}")
-async def get_student_answers(student_id: str) -> Dict[str, Any]:
+async def get_student_answers(student_id: int) -> Dict[str, Any]:
     """Get all answers for a specific student"""
     check_answer_service()
     
@@ -178,7 +172,7 @@ async def get_student_answers(student_id: str) -> Dict[str, Any]:
 
 
 @router.get("/student/{student_id}/question/{question_id}")
-async def get_student_answer(student_id: str, question_id: str) -> Dict[str, Any]:
+async def get_student_answer(student_id: int, question_id: int) -> Dict[str, Any]:
     """Get student's answer for a specific question"""
     check_answer_service()
     
@@ -241,3 +235,5 @@ async def get_answer_statistics() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error calculating answer statistics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+############################################

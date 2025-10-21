@@ -86,7 +86,9 @@ def check_question_service():
             detail=f"Question service not available. Database init failed: {e}"
         )
 
-# Database Info and Health Check Endpoints
+
+################################################
+
 @router.get("/all")
 async def get_all_questions() -> List[Question]:
     """Get all questions from the database"""
@@ -106,7 +108,7 @@ async def get_all_questions() -> List[Question]:
 
 
 @router.get("/{question_id}")
-async def get_question(question_id: str) -> Question:
+async def get_question(question_id: int) -> Question:
     """Step 1: Retrieve ideal answer and marks for a question"""
     check_question_service()
     
@@ -114,6 +116,7 @@ async def get_question(question_id: str) -> Question:
         question_details = question_service.get_question_by_id(question_id)
         if not question_details:
             raise HTTPException(status_code=404, detail=f"Question {question_id} not found")
+        
         return question_details
         
     except Exception as e:
@@ -122,7 +125,7 @@ async def get_question(question_id: str) -> Question:
 
 
 @router.get("/concepts/{question_id}")
-async def get_question_concepts(question_id: str) -> Dict[str, Any]:
+async def get_question_concepts(question_id: int) -> Dict[str, Any]:
     """Get key concepts information for a specific question"""
     check_question_service()
     
@@ -176,7 +179,7 @@ async def get_question_concepts(question_id: str) -> Dict[str, Any]:
 
 
 @router.post("/extract-concepts/{question_id}")
-async def extract_and_save_concepts(question_id: str) -> Dict[str, Any]:
+async def extract_and_save_concepts(question_id: int) -> Dict[str, Any]:
     """Step 2: Extract key concepts from ideal answer and save to database"""
     check_question_service()
     
@@ -212,3 +215,5 @@ async def extract_and_save_concepts(question_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error extracting concepts for question {question_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+################################################

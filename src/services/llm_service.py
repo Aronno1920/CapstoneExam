@@ -175,12 +175,7 @@ class LLMService:
             raise LLMError(f"Failed to extract key concepts: {e}")
     
     
-    async def analyze_semantic_similarity(
-        self, 
-        ideal_answer: str, 
-        student_answer: str, 
-        key_concepts: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    async def analyze_semantic_similarity(self, ideal_answer: str, student_answer: str, key_concepts: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Analyze semantic similarity between ideal and student answers"""
         key_concepts_str = json.dumps(key_concepts, indent=2)
         
@@ -204,14 +199,7 @@ class LLMService:
             raise LLMError(f"Failed to analyze semantic similarity: {e}")
     
     
-    async def apply_grading_rubric(
-        self,
-        ideal_answer: str,
-        student_answer: str,
-        rubric: Dict[str, Any],
-        concept_evaluations: List[Dict[str, Any]],
-        semantic_analysis: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def apply_grading_rubric(self, ideal_answer: str, student_answer: str, rubric: Dict[str, Any], concept_evaluations: List[Dict[str, Any]], semantic_analysis: Dict[str, Any]) -> Dict[str, Any]:
         """Apply grading rubric to calculate final score and feedback"""
         rubric_str = json.dumps(rubric, indent=2)
         concept_evaluations_str = json.dumps(concept_evaluations, indent=2)
@@ -240,13 +228,7 @@ class LLMService:
             raise LLMError(f"Failed to apply grading rubric: {e}")
     
     
-    async def chain_of_thought_grading(
-        self,
-        ideal_answer: str,
-        student_answer: str,
-        subject: str,
-        rubric: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def chain_of_thought_grading(self, ideal_answer: str, student_answer: str, subject: str, rubric: Dict[str, Any]) -> Dict[str, Any]:
         """Perform comprehensive Chain-of-Thought grading"""
         rubric_str = json.dumps(rubric, indent=2)
         
@@ -318,3 +300,5 @@ class LLMService:
         return provider_info
 
 ####################################################
+
+llm_service = LLMService()

@@ -13,10 +13,12 @@ from ..utils.config import settings
 
 from .routers import question_api, grade_api, llm_api, answer_api
 
-from ..utils.database_manager import DatabaseManager
-from ..services.question_service import QuestionService
-from ..services.answer_service import AnswerService
-from ..services.grade_service import GradeService
+from src.utils.database_manager import DatabaseManager
+from src.services.question_service import QuestionService
+from src.services.answer_service import AnswerService
+from src.services.grade_service import GradeService
+from src.services.rag_service import RAGService
+from src.services.llm_service import LLMService
 
 
 # Configure logging
@@ -49,7 +51,8 @@ async def lifespan(app: FastAPI):
         db_manager = DatabaseManager(db_url)
         question_service = QuestionService(db_manager)
         answer_service = AnswerService(db_manager)
-        grade_service = GradeService(db_manager)
+        grade_service = GradeService(db_manager)       
+        
         
         # Set services in routers
         question_api.set_database_services(db_manager, question_service)
@@ -128,8 +131,8 @@ def custom_openapi():
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 
-app.openapi = custom_openapi
 
+app.openapi = custom_openapi
 
 # Include routers (use prefixes defined in each router and show in Swagger)
 app.include_router(question_api.router)

@@ -522,7 +522,7 @@ class GradeService:
             total_processing_time_ms=total_time
         )
 
-    async def complete_grading_workflow(self, question_id: str, student_id: str) -> Dict[str, Any]:
+    async def complete_grading_workflow(self, question_id: int, student_id: int) -> Dict[str, Any]:
         """
         Complete grading workflow as specified:
         1. Retrieve ideal answer and marks
