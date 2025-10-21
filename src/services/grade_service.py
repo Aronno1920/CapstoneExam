@@ -2,17 +2,15 @@
 Core Grading Service for AI Examiner System
 Orchestrates the entire grading process using LLM services
 """
-import json
 import uuid
 import time
 import logging
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any
 from dataclasses import dataclass
 from types import SimpleNamespace
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import SQLAlchemyError
 from ..utils.database_manager import DatabaseManager
 
 

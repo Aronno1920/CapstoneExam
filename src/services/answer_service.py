@@ -10,8 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.utils.database_manager import DatabaseManager
-from src.models.question_model import Question
-from src.models.answer_model import IdealAnswer, Answer
+from src.models.answer_model import IdealAnswer
 
 logger = logging.getLogger(__name__)
 
@@ -40,17 +39,19 @@ class AnswerService:
                     ORDER BY question_id DESC
                 """
             )).fetchall()
+            
             result: List[IdealAnswer] = []
             for row in rows:
                 m = row._mapping if hasattr(row, "_mapping") else row
-                result.append({
-                    "question_id": m["question_id"],
-                    "subject": m["subject"],
-                    "ideal_answer": m["ideal_answer"],
-                    "max_marks": m["max_marks"]
-                })
+                result.append(IdealAnswer(
+                    question_id=m["question_id"],
+                    subject=m["subject"],
+                    ideal_answer=m["ideal_answer"],
+                    max_marks=m["max_marks"]
+                ))
             logger.info(f"Retrieved {len(result)} ideal answers")
             return result
+        
         except SQLAlchemyError as e:
             logger.error(f"Error retrieving ideal answers: {e}")
             return []
@@ -75,12 +76,12 @@ class AnswerService:
                 return None
                 
             m = row._mapping if hasattr(row, "_mapping") else row
-            result = {
-                    "question_id": m["question_id"],
-                    "subject": m["subject"],
-                    "ideal_answer": m["ideal_answer"],
-                    "max_marks": m["max_marks"]
-            }
+            result = IdealAnswer(
+                question_id=m["question_id"],
+                subject=m["subject"],
+                ideal_answer=m["ideal_answer"],
+                max_marks=m["max_marks"]
+            )
             logger.info(f"Retrieved ideal answer for question {question_id}")
             return result
         except SQLAlchemyError as e:

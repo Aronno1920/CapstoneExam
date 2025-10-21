@@ -11,7 +11,7 @@ from urllib.parse import quote_plus
 from sqlalchemy import text
 
 from src.models.question_model import Question
-from src.models.answer_model import Answer
+from src.models.answer_model import Answer, IdealAnswer
 
 from src.utils.database_manager import DatabaseManager
 from src.services.answer_service import AnswerService
@@ -95,7 +95,7 @@ def check_answer_service():
 ############################################
 
 @router.get("/ideal-answers")
-async def get_all_ideal_answers() -> List[Question]:
+async def get_all_ideal_answers() -> List[IdealAnswer]:
     """Get all ideal answers from the database"""
     check_answer_service()
     
@@ -103,7 +103,7 @@ async def get_all_ideal_answers() -> List[Question]:
         ideal_answers = await answer_service.get_all_ideal_answers()
         
         if not ideal_answers:
-            raise HTTPException(status_code=404, detail=f"Question {ideal_answers} not found")
+            raise HTTPException(status_code=404, detail="No ideal answers found")
         
         return ideal_answers
     
@@ -113,7 +113,7 @@ async def get_all_ideal_answers() -> List[Question]:
 
 
 @router.get("/ideal-answers/{question_id}")
-async def get_ideal_answer_by_question(question_id: int) -> Question:
+async def get_ideal_answer_by_question(question_id: int) -> IdealAnswer:
     """Get ideal answer for a specific question"""
     check_answer_service()
     
