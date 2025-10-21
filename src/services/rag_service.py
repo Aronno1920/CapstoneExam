@@ -102,29 +102,31 @@ class RAGService:
             insert_sql = text(
                 """
                 INSERT INTO key_concepts (
-                    question_id, concept_name, concept_description, importance_score, keywords, max_points, extraction_method, created_at
+                    question_id, concept_name, concept_description, importance_score, keywords, max_points, created_at
                 )
-                OUTPUT INSERTED.id
+                OUTPUT INSERTED.key_id
                 VALUES (
-                    :question_id, :concept_name, :concept_description, :importance_score, :keywords, :max_points, :extraction_method, :created_at
+                    :question_id, :concept_name, :concept_description, :importance_score, :keywords, :max_points, :created_at
                 )
                 """
             )
             now = datetime.utcnow()
             for concept_data in concepts_data:
                 params = {
-                    "question_id": question.id,
+                    "question_id": question.question_id,
                     "concept_name": concept_data["concept"],
                     "concept_description": concept_data["explanation"],
                     "importance_score": concept_data["importance"],
                     "keywords": json.dumps(concept_data.get("keywords", [])),
                     "max_points": points_per_concept,
-                    "extraction_method": "llm_extracted",
                     "created_at": now,
                 }
+                
+                logger.info(f"insert_sql: {insert_sql}")
+                
                 inserted = session.execute(insert_sql, params).fetchone()
                 new_id = inserted[0] if inserted else None
-                saved_concepts.append(SimpleNamespace(id=new_id, **params))
+                saved_concepts.append(SimpleNamespace(key_id=new_id, **params))
             session.commit()
             
             logger.info(f"Saved {len(saved_concepts)} key concepts for question {question.question_id}")
@@ -342,7 +344,7 @@ class RAGService:
                     """
                 ), {
                     "grading_result_id": grading_result_id,
-                    "key_concept_id": c.id,
+                    "key_concept_id": c.key_id,
                     "present": concept_eval_data["present"],
                     "accuracy_score": concept_eval_data["accuracy_score"],
                     "points_awarded": points_awarded,
@@ -389,7 +391,7 @@ class RAGService:
             """
             SELECT ce.*, kc.concept_name, kc.max_points
             FROM concept_evaluations ce
-            INNER JOIN key_concepts kc ON ce.key_concept_id = kc.id
+            INNER JOIN key_concepts kc ON ce.key_concept_id = kc.key_id
             WHERE ce.grading_result_id = :gid
             ORDER BY ce.id ASC
             """

@@ -123,7 +123,62 @@ async def get_question(question_id: str) -> Question:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/questions/{question_id}/extract-concepts")
+@router.get("/concepts/{question_id}")
+async def get_question_concepts(question_id: str) -> Dict[str, Any]:
+    """Get key concepts information for a specific question"""
+    check_question_service()
+    
+    try:
+        # Get key concepts from database
+        session = ndb_manager.get_session()
+        try:
+            sql = text("""
+                SELECT key_id, concept_name, concept_description, importance_score, 
+                       keywords, max_points, created_at
+                FROM key_concepts 
+                WHERE question_id = :question_id
+                ORDER BY importance_score DESC, created_at ASC
+            """)
+            rows = session.execute(sql, {"question_id": question_id}).fetchall()
+            
+            if not rows:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"No key concepts found for question {question_id}"
+                )
+            
+            concepts_data = []
+            for row in rows:
+                concept_info = {
+                    "key_id": row.key_id,
+                    "concept_name": row.concept_name,
+                    "concept_description": row.concept_description,
+                    "importance_score": row.importance_score,
+                    "keywords": row.keywords,
+                    "max_points": row.max_points,
+                    "created_at": row.created_at.isoformat() if row.created_at else None
+                }
+                concepts_data.append(concept_info)
+            
+            return {
+                "question_id": question_id,
+                "concepts_count": len(concepts_data),
+                "concepts": concepts_data,
+                "total_max_points": sum(concept["max_points"] for concept in concepts_data),
+                "status": "success"
+            }
+            
+        finally:
+            session.close()
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving concepts for question {question_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/extract-concepts/{question_id}")
 async def extract_and_save_concepts(question_id: str) -> Dict[str, Any]:
     """Step 2: Extract key concepts from ideal answer and save to database"""
     check_question_service()
@@ -140,7 +195,8 @@ async def extract_and_save_concepts(question_id: str) -> Dict[str, Any]:
         concepts_data = []
         for concept in key_concepts:
             concepts_data.append({
-                "id": concept.id,
+                "key_id": concept.key_id,
+                "question_id": question_id,
                 "concept_name": concept.concept_name,
                 "concept_description": concept.concept_description,
                 "importance_score": concept.importance_score,
