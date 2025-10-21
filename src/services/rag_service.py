@@ -12,6 +12,8 @@ from types import SimpleNamespace
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+
+from src.models.schemas import Question, KeyConcept
 from ..utils.database_manager import DatabaseManager
 from .llm_service import llm_service
 from ..utils.config import settings
@@ -40,7 +42,7 @@ class RAGService:
         return self.db_manager.get_session()
     
     # Step 1: Retrieve Ideal Answer and Marks
-    def get_question_with_ideal_answer(self, question_id: str) -> Optional[SimpleNamespace]:
+    def get_question_with_ideal_answer(self, question_id: str) -> Question:
         """
         Step 1: Retrieve ideal answer and marks for a question
         
@@ -68,7 +70,7 @@ class RAGService:
             session.close()
     
     # Step 2: Save Semantic Understanding (Key Concepts)
-    async def extract_and_save_key_concepts(self, question: SimpleNamespace) -> List[SimpleNamespace]:
+    async def extract_and_save_key_concepts(self, question: Question) -> List[KeyConcept]:
         """
         Step 2: Extract key concepts from ideal answer and save to database
         """
@@ -77,7 +79,7 @@ class RAGService:
             # Check if concepts already exist
             exist_rows = session.execute(
                 text("SELECT * FROM key_concepts WHERE question_id = :qid"),
-                {"qid": question.id}
+                {"qid": question.question_id}
             ).fetchall()
             if exist_rows:
                 concepts = [_row_to_ns(r) for r in exist_rows]
