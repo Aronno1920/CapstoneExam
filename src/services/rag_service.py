@@ -13,7 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.models.schemas import Question, KeyConcept
+from src.models.question_model import Question, KeyConcept
 from ..utils.database_manager import DatabaseManager
 from .llm_service import llm_service
 from ..utils.config import settings

@@ -5,7 +5,6 @@ Handles the specific workflow: retrieve ideal answer -> extract concepts -> retr
 import json
 import logging
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime
 from types import SimpleNamespace
 import uuid
 from sqlalchemy import text
@@ -13,7 +12,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
 from ..utils.database_manager import DatabaseManager
-from ..models.schemas import Question
+from src.models.question_model import Question
 
 logger = logging.getLogger(__name__)
 

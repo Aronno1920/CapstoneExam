@@ -53,8 +53,8 @@ async def lifespan(app: FastAPI):
         
         # Set services in routers
         question_api.set_database_services(db_manager, question_service)
+        answer_api.set_database_services(db_manager,answer_service)
         grade_api.set_database_services(grade_service)
-        answer_api.set_database_services(answer_service)
         
         logger.info("Database services initialized successfully")
         

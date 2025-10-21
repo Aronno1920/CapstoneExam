@@ -5,11 +5,10 @@ import time
 import logging
 from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 from urllib.parse import quote_plus
 from sqlalchemy import text
 
-from src.models.schemas import Question
+from src.models.question_model import Question
 
 from ...utils.database_manager import DatabaseManager
 from ...services.question_service import QuestionService
@@ -202,7 +201,6 @@ async def extract_and_save_concepts(question_id: str) -> Dict[str, Any]:
                 "importance_score": concept.importance_score,
                 "keywords": concept.keywords,
                 "max_points": concept.max_points,
-                "extraction_method": concept.extraction_method
             })
         
         return {

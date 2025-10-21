@@ -8,7 +8,10 @@ from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
+from ...utils.database_manager import DatabaseManager
 from ...services.answer_service import AnswerService
+from ...services.rag_service import RAGService
+from ...utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -20,25 +23,69 @@ router = APIRouter(
 )
 
 # Global answer service components (will be set from main app)
+ndb_manager: DatabaseManager = None  # type: ignore
 answer_service: AnswerService = None # type: ignore
+rag_service: RAGService = None # type: ignore
 
 
-def set_database_services(ans_svc: AnswerService):
-    """Set answer services from main application"""
-    global answer_service
+def set_database_services(db_mgr: DatabaseManager, ans_svc: AnswerService):
+    """Set question services from main application"""
+    global ndb_manager, answer_service, rag_service
+    ndb_manager = db_mgr
     answer_service = ans_svc
+    rag_service = RAGService(db_mgr)
 
-
-# Request/Response Models
 
 def check_answer_service():
-    """Helper to check if answer service is available"""
-    if not answer_service:
-        raise HTTPException(
-            status_code=503, 
-            detail="Answer service not available. Please configure MSSQL connection."
-        )
+    """Ensure question service is available; lazily initialize if missing or dead"""
+    global ndb_manager, answer_service, rag_service
 
+    if answer_service and ndb_manager and rag_service:
+        try:
+            session = ndb_manager.get_session()
+            try:
+                session.execute(text("SELECT 1"))
+                return
+            finally:
+                session.close()
+        except Exception:
+            answer_service = None
+            rag_service = None
+            ndb_manager = None  # type: ignore
+
+    try:
+        if settings.database_url and settings.database_url.strip():
+            db_url = settings.database_url.strip()
+        else:
+            driver = quote_plus(settings.db_driver)
+            if settings.use_windows_auth:
+                db_url = (
+                    f"mssql+pyodbc://@{settings.db_server},{settings.db_port}/"
+                    f"{settings.db_name}?driver={driver}&trusted_connection=yes"
+                )
+            else:
+                username = quote_plus(settings.db_username)
+                password = quote_plus(settings.db_password)
+                db_url = (
+                    f"mssql+pyodbc://{username}:{password}@"
+                    f"{settings.db_server},{settings.db_port}/{settings.db_name}?driver={driver}"
+                )
+        ndb_manager = DatabaseManager(db_url)
+        answer_service = AnswerService(ndb_manager)
+        rag_service = RAGService(ndb_manager)
+
+        session = ndb_manager.get_session()
+        try:
+            session.execute(text("SELECT 1"))
+        finally:
+            session.close()
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Question service not available. Database init failed: {e}"
+        )
+        
 
 # Answer CRUD Operations
 @router.get("/all")
