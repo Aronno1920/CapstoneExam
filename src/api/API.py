@@ -16,6 +16,7 @@ from .routers import question_api, grade_api, llm_api, answer_api
 from ..utils.database_manager import DatabaseManager
 from ..services.question_service import QuestionService
 from ..services.answer_service import AnswerService
+from ..services.grade_service import GradeService
 
 
 # Configure logging
@@ -30,21 +31,30 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Initialize database services on application startup"""
     try:
-        # Build database connection string
+        from urllib.parse import quote_plus
+        
+        # Build database connection string with proper URL encoding
         if settings.use_windows_auth:
-            db_url = f"mssql+pyodbc://@{settings.db_server},{settings.db_port}/{settings.db_name}?driver={settings.db_driver}&trusted_connection=yes"
+            driver = quote_plus(settings.db_driver)
+            db_url = f"mssql+pyodbc://@{settings.db_server},{settings.db_port}/{settings.db_name}?driver={driver}&trusted_connection=yes"
         else:
-            db_url = f"mssql+pyodbc://{settings.db_username}:{settings.db_password}@{settings.db_server},{settings.db_port}/{settings.db_name}?driver={settings.db_driver}"
+            driver = quote_plus(settings.db_driver)
+            username = quote_plus(settings.db_username)
+            password = quote_plus(settings.db_password)
+            db_url = f"mssql+pyodbc://{username}:{password}@{settings.db_server},{settings.db_port}/{settings.db_name}?driver={driver}"
+        
+        logger.info(f"Attempting to connect to database: {settings.db_server}:{settings.db_port}/{settings.db_name}")
         
         # Initialize database manager
         db_manager = DatabaseManager(db_url)
         question_service = QuestionService(db_manager)
         answer_service = AnswerService(db_manager)
+        grade_service = GradeService(db_manager)
         
         # Set services in routers
         question_api.set_database_services(db_manager, question_service)
-        grade_api.set_database_services(db_manager, question_service)
-        answer_api.set_database_services(db_manager, answer_service)
+        grade_api.set_database_services(grade_service)
+        answer_api.set_database_services(answer_service)
         
         logger.info("Database services initialized successfully")
         
@@ -98,7 +108,7 @@ async def root() -> Dict[str, Any]:
     }
 
 
-# Custom OpenAPI schema to hide Schemas section
+# Custom OpenAPI schema configuration
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
@@ -110,8 +120,10 @@ def custom_openapi():
         routes=app.routes,
     )
     
-    if "components" in openapi_schema and "schemas" in openapi_schema["components"]:
-        del openapi_schema["components"]["schemas"]
+    # Keep schemas for proper JSON Pointer resolution
+    # Only remove if you want to hide them from the docs UI
+    # if "components" in openapi_schema and "schemas" in openapi_schema["components"]:
+    #     del openapi_schema["components"]["schemas"]
     
     app.openapi_schema = openapi_schema
     return app.openapi_schema

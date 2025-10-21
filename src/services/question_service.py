@@ -13,13 +13,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
 from ..utils.database_manager import DatabaseManager
-from ..utils.config import settings
-from ..services.llm_service import llm_service
-
-# NOTE: Intentionally avoiding ORM model usage for DB operations in this service.
-# All DB access in this service uses direct SQL queries via SQLAlchemy text().
-from ..models.schemas import (GradingCriteria, GradingRubric, KeyConcept as SchemaKeyConcept,
-                             IdealAnswer, StudentAnswer as SchemaStudentAnswer, GradingResult as SchemaGradingResult)
+from ..models.schemas import Question
 
 logger = logging.getLogger(__name__)
 
@@ -36,92 +30,88 @@ def _row_to_ns(row: Any) -> SimpleNamespace:
 
 
 class QuestionService:
-    """Question service implementing the required workflow using direct queries"""
-    
+
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
     
     def get_session(self) -> Session:
         """Get database session"""
         return self.db_manager.get_session()
+
     
-    
-    def get_question_details(self, question_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Get question details with key concepts count (for API responses)
-        """
+    def get_question_by_id(self, question_id: str) -> Optional[Question]:
         session = self.get_session()
         try:
             q_sql = text("SELECT TOP 1 * FROM questions WHERE question_id = :qid")
             row = session.execute(q_sql, {"qid": question_id}).fetchone()
             if not row:
                 return None
+
+            # Convert SQLAlchemy row to object-like namespace
             question = _row_to_ns(row)
-            
+
+            # Count associated key concepts
             count_sql = text("SELECT COUNT(*) AS cnt FROM key_concepts WHERE question_id = :qid")
-            cnt_row = session.execute(count_sql, {"qid": question.id}).fetchone()
-            key_concepts_count = (cnt_row[0] if cnt_row is not None else 0)
-            
-            result = {
-                "id": question.id,
-                "question_id": question.question_id,
-                "subject": question.subject,
-                "topic": question.topic,
-                "question_text": question.question_text,
-                "ideal_answer": question.ideal_answer,
-                "max_marks": question.max_marks,
-                "passing_threshold": question.passing_threshold,
-                "difficulty_level": question.difficulty_level,
-                "key_concepts_count": key_concepts_count
-            }
-            
+            cnt_row = session.execute(count_sql, {"qid": question.question_id}).fetchone()
+            key_concepts_count = cnt_row[0] if cnt_row else 0
+
+            # Build and return model instance
+            result = Question(
+                question_id=question.question_id,
+                subject=question.subject,
+                topic=question.topic,
+                question_text=question.question_text,
+                ideal_answer=question.ideal_answer,
+                max_marks=question.max_marks,
+                passing_threshold=question.passing_threshold
+            )
+
             logger.info(f"Retrieved question {question_id} with {key_concepts_count} key concepts")
-            
             return result
-            
+
         except SQLAlchemyError as e:
             logger.error(f"Database error retrieving question {question_id}: {e}")
             return None
+
         finally:
             session.close()
     
-    def get_all_questions(self) -> List[Dict[str, Any]]:
-        """Get all questions from the database with basic details"""
+    
+    def get_all_questions(self) -> List[Question]:
+        """Get all questions from the database as a list of Question models"""
         session = self.get_session()
+        questions: List[Question] = []
+
         try:
-            rows = session.execute(text("SELECT * FROM questions ORDER BY created_at DESC"))
-            result: List[Dict[str, Any]] = []
+            # Fetch all question rows ordered by creation time
+            q_sql = text("SELECT * FROM questions ORDER BY created_at DESC")
+            rows = session.execute(q_sql).fetchall()
+
             for row in rows:
                 q = _row_to_ns(row)
-                cnt_row = session.execute(
-                    text("SELECT COUNT(*) FROM key_concepts WHERE question_id = :qid"),
-                    {"qid": q.id}
-                ).fetchone()
-                key_concepts_count = cnt_row[0] if cnt_row else 0
-                result.append({
-                    "id": q.id,
-                    "question_id": q.question_id,
-                    "subject": q.subject,
-                    "topic": q.topic,
-                    "question_text": q.question_text,
-                    "max_marks": q.max_marks,
-                    "passing_threshold": q.passing_threshold,
-                    "difficulty_level": q.difficulty_level,
-                    "key_concepts_count": key_concepts_count,
-                    "created_at": q.created_at.isoformat() if getattr(q, "created_at", None) else None,
-                    "updated_at": q.updated_at.isoformat() if getattr(q, "updated_at", None) else None
-                })
-            
-            logger.info(f"Retrieved {len(result)} questions")
-            
-            return result
-            
+                # Convert SQL row → Pydantic model
+                question = Question(
+                    question_id=q.question_id,
+                    subject=q.subject,
+                    topic=q.topic,
+                    question_text=q.question_text,
+                    ideal_answer=getattr(q, "ideal_answer", ""),  # optional if not in select
+                    max_marks=q.max_marks,
+                    passing_threshold=q.passing_threshold
+                )
+                questions.append(question)
+
+            logger.info(f"Retrieved {len(questions)} questions")
+            return questions
+
         except SQLAlchemyError as e:
             logger.error(f"Database error retrieving all questions: {e}")
             return []
+
         finally:
             session.close()
     
+
     def create_question(self, question_id: str, subject: str, topic: str, 
                        question_text: str, ideal_answer: str, max_marks: float,
                        passing_threshold: float = 60.0, difficulty_level: str = "intermediate") -> SimpleNamespace:
@@ -131,10 +121,10 @@ class QuestionService:
             row = session.execute(text(
                 """
                 INSERT INTO questions (
-                    question_id, subject, topic, question_text, ideal_answer, max_marks, passing_threshold, difficulty_level, created_at, updated_at
+                    question_id, subject, topic, question_text, ideal_answer, max_marks, passing_threshold
                 )
                 OUTPUT INSERTED.id
-                VALUES (:question_id, :subject, :topic, :question_text, :ideal_answer, :max_marks, :passing_threshold, :difficulty_level, GETUTCDATE(), GETUTCDATE())
+                VALUES (:question_id, :subject, :topic, :question_text, :ideal_answer, :max_marks, :passing_threshold)
                 """
             ), {
                 "question_id": question_id,
@@ -144,7 +134,6 @@ class QuestionService:
                 "ideal_answer": ideal_answer,
                 "max_marks": max_marks,
                 "passing_threshold": passing_threshold,
-                "difficulty_level": difficulty_level,
             }).fetchone()
             qid = row[0] if row else None
             sel = session.execute(text("SELECT * FROM questions WHERE id = :id"), {"id": qid}).fetchone()
@@ -157,6 +146,7 @@ class QuestionService:
             raise
         finally:
             session.close()
+    
     
     def create_student_answer(self, student_id: str, question_id: str, 
                             answer_text: str, language: str = "en") -> SimpleNamespace:

@@ -109,7 +109,6 @@ async def get_student_answer(student_id: str, question_id: str) -> Dict[str, Any
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
 # Statistics and Utility Endpoints
 @router.get("/stats")
 async def get_answer_statistics() -> Dict[str, Any]:

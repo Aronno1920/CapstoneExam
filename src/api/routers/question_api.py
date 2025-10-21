@@ -6,8 +6,15 @@ import logging
 from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from urllib.parse import quote_plus
+from sqlalchemy import text
 
+from src.models.schemas import Question
+
+from ...utils.database_manager import DatabaseManager
 from ...services.question_service import QuestionService
+from ...services.rag_service import RAGService
+from ...utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -19,33 +26,96 @@ router = APIRouter(
 )
 
 # Global question service components (will be set from main app)
+ndb_manager: DatabaseManager = None  # type: ignore
 question_service: QuestionService = None # type: ignore
+rag_service: RAGService = None # type: ignore
 
 
-def set_database_services(db_svc: QuestionService):
+def set_database_services(db_mgr: DatabaseManager, qus_svc: QuestionService):
     """Set question services from main application"""
-    global question_service
-    question_service = db_svc
+    global ndb_manager, question_service, rag_service
+    ndb_manager = db_mgr
+    question_service = qus_svc
+    rag_service = RAGService(db_mgr)
 
 def check_question_service():
-    """Helper to check if question service is available"""
-    if not question_service:
+    """Ensure question service is available; lazily initialize if missing or dead"""
+    global ndb_manager, question_service, rag_service
+
+    if question_service and ndb_manager and rag_service:
+        try:
+            session = ndb_manager.get_session()
+            try:
+                session.execute(text("SELECT 1"))
+                return
+            finally:
+                session.close()
+        except Exception:
+            question_service = None
+            rag_service = None
+            ndb_manager = None  # type: ignore
+
+    try:
+        if settings.database_url and settings.database_url.strip():
+            db_url = settings.database_url.strip()
+        else:
+            driver = quote_plus(settings.db_driver)
+            if settings.use_windows_auth:
+                db_url = (
+                    f"mssql+pyodbc://@{settings.db_server},{settings.db_port}/"
+                    f"{settings.db_name}?driver={driver}&trusted_connection=yes"
+                )
+            else:
+                username = quote_plus(settings.db_username)
+                password = quote_plus(settings.db_password)
+                db_url = (
+                    f"mssql+pyodbc://{username}:{password}@"
+                    f"{settings.db_server},{settings.db_port}/{settings.db_name}?driver={driver}"
+                )
+        ndb_manager = DatabaseManager(db_url)
+        question_service = QuestionService(ndb_manager)
+        rag_service = RAGService(ndb_manager)
+
+        session = ndb_manager.get_session()
+        try:
+            session.execute(text("SELECT 1"))
+        finally:
+            session.close()
+
+    except Exception as e:
         raise HTTPException(
-            status_code=503, 
-            detail="Question service not available. Please configure MSSQL connection."
+            status_code=503,
+            detail=f"Question service not available. Database init failed: {e}"
         )
 
 # Database Info and Health Check Endpoints
+@router.get("/all")
+async def get_all_questions() -> List[Question]:
+    """Get all questions from the database"""
+    check_question_service()
+    
+    try:
+        questions = question_service.get_all_questions()
+        
+        if not questions:
+            raise HTTPException(status_code=404, detail=f"Questions not found")
+
+        return questions
+        
+    except Exception as e:
+        logger.error(f"Error retrieving all questions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{question_id}")
-async def get_question(question_id: str) -> Dict[str, Any]:
+async def get_question(question_id: str) -> Question:
     """Step 1: Retrieve ideal answer and marks for a question"""
     check_question_service()
     
     try:
-        question_details = question_service.get_question_details(question_id)
+        question_details = question_service.get_question_by_id(question_id)
         if not question_details:
             raise HTTPException(status_code=404, detail=f"Question {question_id} not found")
-        
         return question_details
         
     except Exception as e:
@@ -53,84 +123,18 @@ async def get_question(question_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/all")
-async def get_all_questions() -> Dict[str, Any]:
-    """Get all questions from the database"""
-    check_question_service()
-    
-    try:
-        questions = question_service.get_all_questions()
-        
-        return {
-            "questions": questions,
-            "total_count": len(questions),
-            "status": "success"
-        }
-        
-    except Exception as e:
-        logger.error(f"Error retrieving all questions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/students/{student_id}/answers/{question_id}")
-async def get_student_answer(student_id: str, question_id: str) -> Dict[str, Any]:
-    """Step 3: Retrieve student's submitted answer"""
-    check_question_service()
-    
-    try:
-        student_answer = question_service.get_student_answer(student_id, question_id)
-        if not student_answer:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Student answer not found for student {student_id}, question {question_id}"
-            )
-        
-        return {
-            "id": student_answer.id,
-            "answer_id": student_answer.answer_id,
-            "student_id": student_answer.student_id,
-            "question_id": question_id,
-            "answer_text": student_answer.answer_text,
-            "submitted_at": student_answer.submitted_at.isoformat(),
-            "word_count": student_answer.word_count,
-            "language": student_answer.language
-        }
-        
-    except Exception as e:
-        logger.error(f"Error retrieving student answer: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/students/{student_id}/results")
-async def get_student_results(student_id: str) -> Dict[str, Any]:
-    """Get all grading results for a student"""
-    check_question_service()
-    
-    try:
-        results = question_service.get_grading_results_by_student(student_id)
-        return {
-            "student_id": student_id,
-            "results_count": len(results),
-            "results": results
-        }
-        
-    except Exception as e:
-        logger.error(f"Error retrieving results for student {student_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    
-
 @router.post("/questions/{question_id}/extract-concepts")
 async def extract_and_save_concepts(question_id: str) -> Dict[str, Any]:
     """Step 2: Extract key concepts from ideal answer and save to database"""
     check_question_service()
     
     try:
-        question = question_service.get_question_with_ideal_answer(question_id)
+        question = rag_service.get_question_with_ideal_answer(question_id)
         if not question:
             raise HTTPException(status_code=404, detail=f"Question {question_id} not found")
         
         start_time = time.time()
-        key_concepts = await question_service.extract_and_save_key_concepts(question)
+        key_concepts = await rag_service.extract_and_save_key_concepts(question)
         processing_time = (time.time() - start_time) * 1000
         
         concepts_data = []

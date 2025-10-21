@@ -158,3 +158,21 @@ async def batch_grading_workflow(requests: List[GradingWorkflowRequest]) -> Dict
         "total_failed": failed,
         "total_processing_time_ms": total_time
     }
+
+
+# @router.get("/students/{student_id}/results")
+# async def get_student_results(student_id: str) -> Dict[str, Any]:
+#     """Get all grading results for a student"""
+#     check_question_service()
+    
+#     try:
+#         results = grade_service.get_grading_results_by_student(student_id)
+#         return {
+#             "student_id": student_id,
+#             "results_count": len(results),
+#             "results": results
+#         }
+        
+#     except Exception as e:
+#         logger.error(f"Error retrieving results for student {student_id}: {e}")
+#         raise HTTPException(status_code=500, detail=str(e))
