@@ -37,8 +37,10 @@ class QuestionService:
         """Get database session"""
         return self.db_manager.get_session()
 
-    
-    def get_question_by_id(self, question_id: str) -> Optional[Question]:
+
+###########################################
+
+    async def get_question_by_id(self, question_id: str) -> Optional[Question]:
         session = self.get_session()
         try:
             q_sql = text("SELECT TOP 1 * FROM Question_Bank WHERE question_id = :qid")
@@ -76,7 +78,7 @@ class QuestionService:
             session.close()
     
     
-    def get_all_questions(self) -> List[Question]:
+    async def get_all_questions(self) -> List[Question]:
         """Get all questions from the database as a list of Question models"""
         session = self.get_session()
         questions: List[Question] = []
@@ -111,7 +113,7 @@ class QuestionService:
             session.close()
     
 
-    def create_question(self, question_id: str, subject: str, topic: str, 
+    async def create_question(self, question_id: str, subject: str, topic: str, 
                        question_text: str, ideal_answer: str, max_marks: float,
                        passing_threshold: float = 60.0, difficulty_level: str = "intermediate") -> SimpleNamespace:
         """Create a new question with ideal answer (raw SQL)"""
@@ -147,7 +149,7 @@ class QuestionService:
             session.close()
     
     
-    def create_student_answer(self, student_id: str, question_id: str, 
+    async def create_student_answer(self, student_id: str, question_id: str, 
                             answer_text: str, language: str = "en") -> SimpleNamespace:
         """Create a new student answer (raw SQL)"""
         session = self.get_session()
@@ -186,7 +188,7 @@ class QuestionService:
             session.close()
     
 
-    def get_grading_results_by_student(self, student_id: str) -> List[Dict[str, Any]]:
+    async def get_grading_results_by_student(self, student_id: str) -> List[Dict[str, Any]]:
         """Get all grading results for a student (raw SQL)"""
         session = self.get_session()
         try:
@@ -209,6 +211,5 @@ class QuestionService:
         finally:
             session.close()
 
+###########################################
 
-# Initialize question service (will be set up in main application)
-question_service: QuestionService = None # type: ignore

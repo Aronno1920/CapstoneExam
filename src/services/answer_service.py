@@ -9,13 +9,13 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
-from ..utils.database_manager import DatabaseManager
+from src.utils.database_manager import DatabaseManager
+from src.models.question_model import Question
 
 logger = logging.getLogger(__name__)
 
 
 class AnswerService:
-    """Answer service for student answer operations using direct queries"""
     
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
@@ -24,7 +24,79 @@ class AnswerService:
         """Get database session"""
         return self.db_manager.get_session()
     
-    def get_student_answer(self, student_id: str, question_id: str) -> Optional[Any]:
+    
+############################################
+
+    async def get_all_ideal_answers(self) -> List[Question]:
+        """Get all ideal answers from the database"""
+        session = self.get_session()
+        try:
+            rows = session.execute(text(
+                """
+                SELECT question_id, question_text, ideal_answer, max_marks, subject, topic, difficulty_level, created_at
+                FROM Question_Bank 
+                WHERE ideal_answer IS NOT NULL AND ideal_answer != ''
+                ORDER BY created_at DESC
+                """
+            )).fetchall()
+            result: List[Dict[str, Any]] = []
+            for row in rows:
+                m = row._mapping if hasattr(row, "_mapping") else row
+                result.append({
+                    "question_id": m["question_id"],
+                    "question_text": m["question_text"],
+                    "ideal_answer": m["ideal_answer"],
+                    "max_marks": m["max_marks"],
+                    "subject": m["subject"],
+                    "topic": m["topic"],
+                    "difficulty_level": m["difficulty_level"],
+                    "created_at": m["created_at"].isoformat() if m["created_at"] else None,
+                })
+            logger.info(f"Retrieved {len(result)} ideal answers")
+            return result
+        except SQLAlchemyError as e:
+            logger.error(f"Error retrieving ideal answers: {e}")
+            return []
+        finally:
+            session.close()
+    
+    
+    async def get_ideal_answer_by_question_id(self, question_id: str) -> Question:
+        """Get ideal answer for a specific question"""
+        session = self.get_session()
+        try:
+            row = session.execute(text(
+                """
+                SELECT question_id, question_text, ideal_answer, max_marks, subject, topic, difficulty_level, created_at
+                FROM Question_Bank 
+                WHERE question_id = :question_id AND ideal_answer IS NOT NULL AND ideal_answer != ''
+                """
+            ), {"question_id": question_id}).fetchone()
+            
+            if not row:
+                return None
+                
+            m = row._mapping if hasattr(row, "_mapping") else row
+            result = {
+                "question_id": m["question_id"],
+                "question_text": m["question_text"],
+                "ideal_answer": m["ideal_answer"],
+                "max_marks": m["max_marks"],
+                "subject": m["subject"],
+                "topic": m["topic"],
+                "difficulty_level": m["difficulty_level"],
+                "created_at": m["created_at"].isoformat() if m["created_at"] else None,
+            }
+            logger.info(f"Retrieved ideal answer for question {question_id}")
+            return result
+        except SQLAlchemyError as e:
+            logger.error(f"Error retrieving ideal answer for question {question_id}: {e}")
+            return None
+        finally:
+            session.close()
+    
+    
+    async def get_student_answer(self, student_id: str, question_id: str) -> Optional[Any]:
         """Get student's submitted answer via direct SQL"""
         session = self.get_session()
         try:
@@ -60,7 +132,8 @@ class AnswerService:
         finally:
             session.close()
     
-    def get_all_student_answers(self) -> List[Dict[str, Any]]:
+    
+    async def get_all_student_answers(self) -> List[Dict[str, Any]]:
         """Get all student answers from the database"""
         session = self.get_session()
         try:
@@ -94,7 +167,8 @@ class AnswerService:
         finally:
             session.close()
     
-    def get_student_answers_by_student(self, student_id: str) -> List[Dict[str, Any]]:
+    
+    async def get_student_answers_by_student(self, student_id: str) -> List[Dict[str, Any]]:
         """Get all answers for a specific student"""
         session = self.get_session()
         try:
@@ -129,71 +203,5 @@ class AnswerService:
             return []
         finally:
             session.close()
-    
-    def get_all_ideal_answers(self) -> List[Dict[str, Any]]:
-        """Get all ideal answers from the database"""
-        session = self.get_session()
-        try:
-            rows = session.execute(text(
-                """
-                SELECT question_id, question_text, ideal_answer, max_marks, subject, topic, difficulty_level, created_at
-                FROM Question_Bank 
-                WHERE ideal_answer IS NOT NULL AND ideal_answer != ''
-                ORDER BY created_at DESC
-                """
-            )).fetchall()
-            result: List[Dict[str, Any]] = []
-            for row in rows:
-                m = row._mapping if hasattr(row, "_mapping") else row
-                result.append({
-                    "question_id": m["question_id"],
-                    "question_text": m["question_text"],
-                    "ideal_answer": m["ideal_answer"],
-                    "max_marks": m["max_marks"],
-                    "subject": m["subject"],
-                    "topic": m["topic"],
-                    "difficulty_level": m["difficulty_level"],
-                    "created_at": m["created_at"].isoformat() if m["created_at"] else None,
-                })
-            logger.info(f"Retrieved {len(result)} ideal answers")
-            return result
-        except SQLAlchemyError as e:
-            logger.error(f"Error retrieving ideal answers: {e}")
-            return []
-        finally:
-            session.close()
-    
-    def get_ideal_answer_by_question_id(self, question_id: str) -> Optional[Dict[str, Any]]:
-        """Get ideal answer for a specific question"""
-        session = self.get_session()
-        try:
-            row = session.execute(text(
-                """
-                SELECT question_id, question_text, ideal_answer, max_marks, subject, topic, difficulty_level, created_at
-                FROM Question_Bank 
-                WHERE question_id = :question_id AND ideal_answer IS NOT NULL AND ideal_answer != ''
-                """
-            ), {"question_id": question_id}).fetchone()
-            
-            if not row:
-                return None
-                
-            m = row._mapping if hasattr(row, "_mapping") else row
-            result = {
-                "question_id": m["question_id"],
-                "question_text": m["question_text"],
-                "ideal_answer": m["ideal_answer"],
-                "max_marks": m["max_marks"],
-                "subject": m["subject"],
-                "topic": m["topic"],
-                "difficulty_level": m["difficulty_level"],
-                "created_at": m["created_at"].isoformat() if m["created_at"] else None,
-            }
-            logger.info(f"Retrieved ideal answer for question {question_id}")
-            return result
-        except SQLAlchemyError as e:
-            logger.error(f"Error retrieving ideal answer for question {question_id}: {e}")
-            return None
-        finally:
-            session.close()
-    
+
+############################################

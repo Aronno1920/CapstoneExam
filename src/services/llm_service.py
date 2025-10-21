@@ -123,7 +123,6 @@ class GitHubModelsProvider(BaseLLMProvider):
 
 
 class LLMService:
-    """Main LLM service that manages different providers"""
     
     def __init__(self):
         self.provider: Optional[BaseLLMProvider] = None
@@ -150,6 +149,8 @@ class LLMService:
             logger.error(f"Failed to initialize LLM provider: {e}")
             raise
     
+################################################
+    
     async def extract_key_concepts(self, ideal_answer: str, subject: str, topic: str) -> List[Dict[str, Any]]:
         """Extract key concepts from an ideal answer"""
         prompt = PromptTemplates.CONCEPT_EXTRACTION.format(
@@ -172,6 +173,7 @@ class LLMService:
         except Exception as e:
             logger.error(f"Error extracting key concepts: {e}")
             raise LLMError(f"Failed to extract key concepts: {e}")
+    
     
     async def analyze_semantic_similarity(
         self, 
@@ -200,6 +202,7 @@ class LLMService:
         except Exception as e:
             logger.error(f"Error analyzing semantic similarity: {e}")
             raise LLMError(f"Failed to analyze semantic similarity: {e}")
+    
     
     async def apply_grading_rubric(
         self,
@@ -236,6 +239,7 @@ class LLMService:
             logger.error(f"Error applying grading rubric: {e}")
             raise LLMError(f"Failed to apply grading rubric: {e}")
     
+    
     async def chain_of_thought_grading(
         self,
         ideal_answer: str,
@@ -266,7 +270,8 @@ class LLMService:
             logger.error(f"Error in chain-of-thought grading: {e}")
             raise LLMError(f"Failed to perform chain-of-thought grading: {e}")
     
-    def _parse_json_response(self, response: str) -> Dict[str, Any]:
+    
+    async def _parse_json_response(self, response: str) -> Dict[str, Any]:
         """Parse JSON response with error handling"""
         try:
             # Remove any potential markdown formatting
@@ -284,14 +289,16 @@ class LLMService:
             logger.debug(f"Raw response: {response}")
             raise LLMResponseParsingError(f"Invalid JSON response: {e}")
     
-    def validate_connection(self) -> bool:
+    
+    async def validate_connection(self) -> bool:
         """Validate that the LLM service is properly configured and connected"""
         if not self.provider:
             return False
         
         return self.provider.validate_connection()
     
-    def get_provider_info(self) -> Dict[str, Any]:
+    
+    async def get_provider_info(self) -> Dict[str, Any]:
         """Get information about the current provider and model"""
         provider_info = {
             "provider": settings.llm_provider,
@@ -310,6 +317,4 @@ class LLMService:
         
         return provider_info
 
-
-# Global LLM service instance
-llm_service = LLMService()
+####################################################

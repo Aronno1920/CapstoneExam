@@ -40,6 +40,7 @@ class PromptTemplates:
           }}
       """
 
+
     SEMANTIC_ANALYSIS = """
       # ROLE & GOAL
         You are an expert and impartial academic examiner. Your goal is to perform a detailed, concept-by-concept semantic comparison between a student's answer and an ideal answer, using a provided list of key concepts. Your analysis must be objective, evidence-based, and follow a strict evaluation process.
@@ -92,6 +93,7 @@ class PromptTemplates:
         "completeness_score": 1.0
       }}
       """
+
 
     GRADING_RUBRIC_APPLICATION = """
       # ROLE & GOAL
@@ -167,6 +169,7 @@ class PromptTemplates:
           "grading_timestamp": "2025-10-21T16:45:22Z"
         }}
       """
+
 
     CHAIN_OF_THOUGHT_GRADING = """
       # ROLE & GOAL

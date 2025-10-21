@@ -14,9 +14,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.models.question_model import Question, KeyConcept
-from ..utils.database_manager import DatabaseManager
+from src.utils.database_manager import DatabaseManager
 from .llm_service import llm_service
-from ..utils.config import settings
+from src.utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +41,11 @@ class RAGService:
         """Get database session"""
         return self.db_manager.get_session()
     
+    
+#####################################################    
+    
     # Step 1: Retrieve Ideal Answer and Marks
-    def get_question_with_ideal_answer(self, question_id: str) -> Question:
+    async def get_question_with_ideal_answer(self, question_id: str) -> Question:
         """
         Step 1: Retrieve ideal answer and marks for a question
         
@@ -142,7 +145,7 @@ class RAGService:
             session.close()
     
     # Step 3: Retrieve Student's Submitted Answer
-    def get_student_answer(self, student_id: str, question_id: str) -> Optional[SimpleNamespace]:
+    async def get_student_answer(self, student_id: str, question_id: str) -> Optional[SimpleNamespace]:
         """Retrieve student's submitted answer via direct SQL"""
         session = self.get_session()
         try:
@@ -385,7 +388,7 @@ class RAGService:
         finally:
             session.close()
 
-    def _format_grading_response_raw(self, grading_result: SimpleNamespace, session: Session) -> Dict[str, Any]:
+    async def _format_grading_response_raw(self, grading_result: SimpleNamespace, session: Session) -> Dict[str, Any]:
         """Format existing grading result (raw SQL) into the required response format"""
         rows = session.execute(text(
             """
@@ -412,3 +415,5 @@ class RAGService:
             "ConfidenceScore": grading_result.confidence_score,
             "GradingResultId": grading_result.result_id,
         }
+
+#########################################################

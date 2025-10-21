@@ -223,7 +223,6 @@ class ResponseEvaluator:
 
 
 class GradeService:
-    """Main AI Examiner class that orchestrates the entire grading process"""
     
     def __init__(self, db_manager: DatabaseManager):
         self.semantic_analyzer = SemanticAnalyzer()
@@ -235,6 +234,8 @@ class GradeService:
         """Get database session"""
         return self.db_manager.get_session()
     
+##################################################    
+
     async def grade_answer(
         self,
         student_answer: StudentAnswer,
@@ -444,7 +445,7 @@ class GradeService:
         
         return grading_result
     
-    def _extract_similarity_score(self, cot_result: Dict[str, Any]) -> float:
+    async def _extract_similarity_score(self, cot_result: Dict[str, Any]) -> float:
         """Extract semantic similarity score from Chain-of-Thought result"""
         concept_comparisons = cot_result.get("step3_concept_comparison", [])
         if not concept_comparisons:
@@ -463,7 +464,7 @@ class GradeService:
         
         return weighted_sum / total_weight if total_weight > 0 else 0.8
     
-    def _calculate_completeness_score(self, concept_evaluations: List[ConceptEvaluation]) -> float:
+    async def _calculate_completeness_score(self, concept_evaluations: List[ConceptEvaluation]) -> float:
         """Calculate completeness score based on concept coverage"""
         if not concept_evaluations:
             return 0.7  # Default estimate
@@ -521,9 +522,6 @@ class GradeService:
             total_processing_time_ms=total_time
         )
 
-
-
-    # Complete Workflow Method
     async def complete_grading_workflow(self, question_id: str, student_id: str) -> Dict[str, Any]:
         """
         Complete grading workflow as specified:
@@ -567,11 +565,4 @@ class GradeService:
         logger.info(f"Completed grading workflow for student {student_id}: {result['Score']}")
         return result
 
-
-
-
-
-
-
-# # Global AI Examiner instance
-# gradeService = GradeService()
+##############################################
