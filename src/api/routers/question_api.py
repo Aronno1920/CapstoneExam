@@ -95,7 +95,7 @@ async def get_all_questions() -> List[Question]:
     check_question_service()
     
     try:
-        questions = question_service.get_all_questions()
+        questions = await question_service.get_all_questions()
         
         if not questions:
             raise HTTPException(status_code=404, detail=f"Questions not found")
@@ -113,7 +113,7 @@ async def get_question(question_id: int) -> Question:
     check_question_service()
     
     try:
-        question_details = question_service.get_question_by_id(question_id)
+        question_details = await question_service.get_question_by_id(question_id)
         if not question_details:
             raise HTTPException(status_code=404, detail=f"Question {question_id} not found")
         

@@ -242,7 +242,7 @@ class GradingRubric(BaseModel):
     """Complete grading rubric for an answer"""
     subject: str = Field(..., description="Subject area (e.g., Physics, History)")
     topic: str = Field(..., description="Specific topic within the subject")
-    criteria: List[GradingCriteria] = Field(..., min_items=1, description="List of grading criteria")
+    criteria: List[GradingCriteria] = Field(..., min_items=1, description="List of grading criteria") # type: ignore
     total_max_points: float = Field(..., gt=0, description="Maximum possible total score")
     passing_threshold: float = Field(default=60.0, ge=0, le=100, description="Minimum percentage to pass")
     
