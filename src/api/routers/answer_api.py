@@ -11,7 +11,7 @@ from urllib.parse import quote_plus
 from sqlalchemy import text
 
 from src.models.question_model import Question
-from src.models.answer_model import Answer, IdealAnswer
+from src.models.answer_model import Answer, IdealAnswer, StudentAnswer
 
 from src.utils.database_manager import DatabaseManager
 from src.services.answer_service import AnswerService
@@ -133,18 +133,17 @@ async def get_ideal_answer_by_question(question_id: int) -> IdealAnswer:
 
 
 @router.get("/all")
-async def get_all_student_answers() -> Dict[str, Any]:
+async def get_all_student_answers() -> List[StudentAnswer]:
     """Get all student answers from the database"""
     check_answer_service()
     
     try:
         answers = await answer_service.get_all_student_answers()
         
-        return {
-            "student_answers": answers,
-            "total_count": len(answers),
-            "status": "success"
-        }
+        if not answers:
+            raise HTTPException(status_code=404, detail=f"Student answer not found for question {answers}")
+            
+        return answers
         
     except Exception as e:
         logger.error(f"Error retrieving all student answers: {e}")
@@ -152,19 +151,17 @@ async def get_all_student_answers() -> Dict[str, Any]:
 
 
 @router.get("/student/{student_id}")
-async def get_student_answers(student_id: int) -> Dict[str, Any]:
+async def get_student_answers(student_id: int) -> List[StudentAnswer]:
     """Get all answers for a specific student"""
     check_answer_service()
     
     try:
         answers = await answer_service.get_student_answers_by_student(student_id)
         
-        return {
-            "student_id": student_id,
-            "student_answers": answers,
-            "total_count": len(answers),
-            "status": "success"
-        }
+        if not answers:
+            raise HTTPException(status_code=404, detail=f"Student answer not found for question {answers}")
+            
+        return answers
         
     except Exception as e:
         logger.error(f"Error retrieving answers for student {student_id}: {e}")
@@ -172,28 +169,17 @@ async def get_student_answers(student_id: int) -> Dict[str, Any]:
 
 
 @router.get("/student/{student_id}/question/{question_id}")
-async def get_student_answer(student_id: int, question_id: int) -> Dict[str, Any]:
+async def get_student_answer(student_id: int, question_id: int) -> StudentAnswer:
     """Get student's answer for a specific question"""
     check_answer_service()
     
     try:
         student_answer = await answer_service.get_student_answer(student_id, question_id)
-        if not student_answer:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Student answer not found for student {student_id}, question {question_id}"
-            )
         
-        return {
-            "id": student_answer.id,
-            "answer_id": student_answer.answer_id,
-            "student_id": student_answer.student_id,
-            "question_id": question_id,
-            "answer_text": student_answer.answer_text,
-            "submitted_at": student_answer.submitted_at.isoformat(),
-            "word_count": student_answer.word_count,
-            "language": student_answer.language
-        }
+        if not student_answer:
+            raise HTTPException(status_code=404, detail=f"Student answer not found for student {student_id}, question {question_id}")
+        
+        return student_answer
         
     except Exception as e:
         logger.error(f"Error retrieving student answer: {e}")

@@ -113,9 +113,7 @@ class QuestionService:
             session.close()
     
 
-    async def create_question(self, question_id: int, subject: str, topic: str, 
-                       question_text: str, ideal_answer: str, max_marks: float,
-                       passing_threshold: float = 60.0, difficulty_level: str = "intermediate") -> SimpleNamespace:
+    async def create_question(self, question_id: int, subject: str, topic: str, question_text: str, ideal_answer: str, max_marks: float, passing_threshold: float = 60.0) -> SimpleNamespace:
         """Create a new question with ideal answer (raw SQL)"""
         session = self.get_session()
         try:
@@ -149,8 +147,7 @@ class QuestionService:
             session.close()
     
     
-    async def create_student_answer(self, student_id: int, question_id: int, 
-                            answer_text: str, language: str = "en") -> SimpleNamespace:
+    async def create_student_answer(self, student_id: int, question_id: int, answer_text: str, language: str = "en") -> SimpleNamespace:
         """Create a new student answer (raw SQL)"""
         session = self.get_session()
         try:

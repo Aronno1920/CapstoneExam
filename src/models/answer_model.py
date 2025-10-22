@@ -20,3 +20,16 @@ class Answer(BaseModel):
     language: str = Field(..., description="Language")
     word_count: int = Field(..., description="Word count")
     submitted_at: datetime = Field(..., description="Submitted at")
+    
+class StudentAnswer(BaseModel):
+    answer_id: int = Field(..., description="")
+    student_id: int = Field(..., description="")
+    question_id: int = Field(..., description="")
+    subject: str = Field(..., description="")
+    topic: str = Field(..., description="")
+    question_text: str = Field(..., description="")
+    answer_text: str = Field(..., description="")
+    language: str = Field(..., description="")
+    word_count: int = Field(..., description="")
+    max_marks: float = Field(..., description="")
+    passing_threshold: float = Field(..., description="")
