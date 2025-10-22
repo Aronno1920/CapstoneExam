@@ -183,7 +183,7 @@ async def extract_and_save_concepts(question_id: int) -> Dict[str, Any]:
     check_question_service()
     
     try:
-        question = rag_service.get_question_with_ideal_answer(question_id)
+        question = await rag_service.get_question_with_ideal_answer(question_id)
         if not question:
             raise HTTPException(status_code=404, detail=f"Question {question_id} not found")
         
