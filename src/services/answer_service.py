@@ -103,52 +103,6 @@ class AnswerService:
             session.close()
     
     
-    async def get_student_answers_by_student(self, student_id: int) -> List[StudentAnswer]:
-        """Get all answers for a specific student"""
-        session = self.get_session()
-        student_answers: List[StudentAnswer] = []
-        
-        try:
-            sql = text(
-                """
-                SELECT a.answer_id,a.student_id,a.question_id,q.subject,q.topic,q.question_text,a.answer_text,a.language,a.word_count,q.max_marks,q.passing_threshold
-                FROM Student_Answers a
-                INNER JOIN Question_Bank q ON a.question_id = q.question_id
-                WHERE a.student_id = :student_id
-                ORDER BY a.answer_id DESC
-                """
-            )
-            rows = session.execute(sql, {"student_id": student_id}).fetchall()
-            
-            for row in rows:
-                sa = _row_to_ns(row)
-                # Convert SQL row → Pydantic model
-                student_answer = StudentAnswer(
-                    answer_id=sa.answer_id,
-                    student_id=sa.student_id,
-                    question_id=sa.question_id,
-                    subject=sa.subject,
-                    topic=sa.topic,
-                    question_text=sa.question_text,
-                    answer_text=sa.answer_text,
-                    language=sa.language,
-                    word_count=sa.word_count,
-                    max_marks=sa.max_marks,
-                    passing_threshold=sa.passing_threshold
-                )
-                student_answers.append(student_answer)
-                
-            logger.info(f"Retrieved {len(rows)} answers for student {student_id}")
-            return student_answers
-        
-        except SQLAlchemyError as e:
-            logger.error(f"Error retrieving answers for student {student_id}: {e}")
-            return []
-        finally:
-            session.close()
-    
-    
-    
     async def get_all_student_answers(self) -> List[StudentAnswer]:
         """Get all student answers from the database as a list of StudentAnswer models"""
         session = self.get_session()
@@ -233,4 +187,41 @@ class AnswerService:
         finally:
             session.close()
     
+    
+    async def get_student_answers_by_student(self, student_id: int) -> List[StudentAnswer]:
+        """Get all answers for a specific student"""
+        session = self.get_session()
+        try:
+            rows = session.execute(text(
+                """
+                SELECT sa.*, q.question_id, q.question_text
+                FROM student_answers sa
+                INNER JOIN questions q ON sa.question_id = q.id
+                WHERE sa.student_id = :student_id
+                ORDER BY sa.submitted_at DESC
+                """
+            ), {"student_id": student_id}).fetchall()
+            result: List[Dict[str, Any]] = []
+            for row in rows:
+                m = row._mapping if hasattr(row, "_mapping") else row
+                qt = m["question_text"] or ""
+                result.append({
+                    "id": m["id"],
+                    "answer_id": m["answer_id"],
+                    "student_id": m["student_id"],
+                    "question_id": m["question_id"],
+                    "question_text": qt[:100] + ("..." if len(qt) > 100 else ""),
+                    "answer_text": m["answer_text"],
+                    "word_count": m["word_count"],
+                    "submitted_at": m["submitted_at"].isoformat() if m["submitted_at"] else None,
+                    "language": m["language"],
+                })
+            logger.info(f"Retrieved {len(result)} answers for student {student_id}")
+            return result
+        except SQLAlchemyError as e:
+            logger.error(f"Error retrieving answers for student {student_id}: {e}")
+            return []
+        finally:
+            session.close()
+
 ############################################

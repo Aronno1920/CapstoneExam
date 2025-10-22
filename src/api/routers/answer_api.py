@@ -11,7 +11,7 @@ from urllib.parse import quote_plus
 from sqlalchemy import text
 
 from src.models.question_model import Question
-from src.models.answer_model import Answer, IdealAnswer, StudentAnswer
+from src.models.answer_model import Answer, IdealAnswer, StudentAnswer, SubmitAnswerRequest
 
 from src.utils.database_manager import DatabaseManager
 from src.services.answer_service import AnswerService
@@ -186,40 +186,26 @@ async def get_student_answer(student_id: int, question_id: int) -> StudentAnswer
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Statistics and Utility Endpoints
-@router.get("/stats")
-async def get_answer_statistics() -> Dict[str, Any]:
-    """Get statistics about student answers"""
+@router.post("/submit")
+async def submit_student_answer(request: SubmitAnswerRequest) -> StudentAnswer:
+    """Submit a new student answer"""
     check_answer_service()
     
     try:
-        all_answers = await answer_service.get_all_student_answers()
+        student_answer = await answer_service.submit_student_answer(
+            student_id=request.student_id,
+            question_id=request.question_id,
+            answer_text=request.answer_text,
+            language=request.language
+        )
         
-        # Calculate basic statistics
-        total_answers = len(all_answers)
-        if total_answers == 0:
-            return {
-                "total_answers": 0,
-                "unique_students": 0,
-                "unique_questions": 0,
-                "average_word_count": 0,
-                "status": "success"
-            }
+        return student_answer
         
-        unique_students = len(set(answer["student_id"] for answer in all_answers))
-        unique_questions = len(set(answer["question_id"] for answer in all_answers))
-        average_word_count = sum(answer["word_count"] or 0 for answer in all_answers) / total_answers
-        
-        return {
-            "total_answers": total_answers,
-            "unique_students": unique_students,
-            "unique_questions": unique_questions,
-            "average_word_count": round(average_word_count, 2),
-            "status": "success"
-        }
-        
+    except ValueError as e:
+        logger.error(f"Validation error submitting answer: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Error calculating answer statistics: {e}")
+        logger.error(f"Error submitting student answer: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 ############################################

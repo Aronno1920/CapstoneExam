@@ -33,3 +33,11 @@ class StudentAnswer(BaseModel):
     word_count: int = Field(..., description="")
     max_marks: float = Field(..., description="")
     passing_threshold: float = Field(..., description="")
+
+
+class SubmitAnswerRequest(BaseModel):
+    """Request model for submitting a student answer"""
+    student_id: int = Field(..., description="Student identifier")
+    question_id: int = Field(..., description="Question identifier")
+    answer_text: str = Field(..., min_length=1, description="Student's answer text")
+    language: str = Field(default="en", description="Language of the answer")
