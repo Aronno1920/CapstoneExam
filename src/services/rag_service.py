@@ -21,7 +21,6 @@ from src.utils.config import settings
 logger = logging.getLogger(__name__)
 
 def _row_to_ns(row: Any) -> SimpleNamespace:
-    """Convert SQLAlchemy Row to attribute-accessible namespace"""
     if row is None:
         return None  # type: ignore
     try:
@@ -32,8 +31,6 @@ def _row_to_ns(row: Any) -> SimpleNamespace:
 
 
 class RAGService:
-    """RAG Service for handling question retrieval, concept extraction, and student answer processing"""
-    
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
     
@@ -45,16 +42,7 @@ class RAGService:
 #####################################################    
     
     # Step 1: Retrieve Ideal Answer and Marks
-    async def get_question_with_ideal_answer(self, question_id: str) -> Question:
-        """
-        Step 1: Retrieve ideal answer and marks for a question
-        
-        Args:
-            question_id: Unique identifier for the question
-            
-        Returns:
-            Object with question fields, or None if not found
-        """
+    async def get_question_with_ideal_answer(self, question_id: int) -> Question:
         session = self.get_session()
         try:
             sql = text("SELECT TOP 1 * FROM Question_Bank WHERE question_id = :qid")
@@ -74,16 +62,16 @@ class RAGService:
     
     # Step 2: Save Semantic Understanding (Key Concepts)
     async def extract_and_save_key_concepts(self, question: Question) -> List[KeyConcept]:
-        """
-        Step 2: Extract key concepts from ideal answer and save to database
-        """
         session = self.get_session()
         try:
             # Check if concepts already exist
-            exist_rows = session.execute(
-                text("SELECT * FROM Question_KeyConcept WHERE question_id = :qid"),
-                {"qid": question.question_id}
-            ).fetchall()
+            sql = text(
+                """
+                SELECT * FROM Question_KeyConcept WHERE question_id = :question_id
+                """
+                )
+            exist_rows = session.execute(sql, {"question_id": question.question_id}).fetchall()
+            
             if exist_rows:
                 concepts = [_row_to_ns(r) for r in exist_rows]
                 logger.info(f"Using existing {len(concepts)} key concepts for question {question.question_id}")
@@ -145,16 +133,15 @@ class RAGService:
             session.close()
     
     # Step 3: Retrieve Student's Submitted Answer
-    async def get_student_answer(self, student_id: str, question_id: str) -> Optional[SimpleNamespace]:
+    async def get_student_answer(self, student_id: int, question_id: int) -> Optional[SimpleNamespace]:
         """Retrieve student's submitted answer via direct SQL"""
         session = self.get_session()
         try:
             sql = text(
                 """
-                SELECT sa.*
-                FROM Student_Answers sa
-                INNER JOIN questions q ON sa.question_id = q.id
-                WHERE sa.student_id = :student_id AND q.question_id = :question_id
+                SELECT TOP 1 *
+                FROM Student_Answers
+                WHERE student_id = :student_id AND question_id = :question_id
                 """
             )
             row = session.execute(sql, {"student_id": student_id, "question_id": question_id}).fetchone()
@@ -165,7 +152,13 @@ class RAGService:
             # Update word count if not set
             if getattr(sa, "word_count", None) in (None, 0):
                 wc = len((sa.answer_text or "").split())
-                session.execute(text("UPDATE Student_Answers SET word_count = :wc WHERE id = :id"), {"wc": wc, "id": sa.id})
+                sa_pk = getattr(sa, "id", None)
+                if sa_pk is not None:
+                    session.execute(text("UPDATE Student_Answers SET word_count = :wc WHERE id = :id"), {"wc": wc, "id": sa_pk})
+                else:
+                    sa_alt_pk = getattr(sa, "answer_id", None)
+                    if sa_alt_pk is not None:
+                        session.execute(text("UPDATE Student_Answers SET word_count = :wc WHERE answer_id = :aid"), {"wc": wc, "aid": sa_alt_pk})
                 session.commit()
                 sa.word_count = wc
             
@@ -180,12 +173,7 @@ class RAGService:
             session.close()
     
     # Step 4: Grade and Save Results
-    async def grade_and_save_result(
-        self, 
-        question: SimpleNamespace, 
-        student_answer: SimpleNamespace, 
-        key_concepts: List[SimpleNamespace]
-    ) -> Dict[str, Any]:
+    async def grade_and_save_result(self, question: SimpleNamespace, student_answer: SimpleNamespace, key_concepts: List[SimpleNamespace]) -> Dict[str, Any]:
         """
         Grade the student answer and save results using direct SQL queries.
         """
@@ -194,13 +182,18 @@ class RAGService:
         
         try:
             # Check if already graded
-            existing_row = session.execute(
-                text("SELECT TOP 1 * FROM grading_results WHERE student_answer_id = :sid"),
-                {"sid": student_answer.id}
-            ).fetchone()
+            sa_pk = getattr(student_answer, "id", None)
+            if sa_pk is None:
+                sa_pk = getattr(student_answer, "answer_id", None)
+            existing_row = None
+            if sa_pk is not None:
+                existing_row = session.execute(
+                    text("SELECT TOP 1 * FROM grading_results WHERE student_answer_id = :sid"),
+                    {"sid": sa_pk}
+                ).fetchone()
             if existing_row:
                 logger.info(f"Using existing grading result for student {student_answer.student_id}")
-                return self._format_grading_response_raw(_row_to_ns(existing_row), session)
+                return await self._format_grading_response_raw(_row_to_ns(existing_row), session)
             
             # Prepare key concepts data for LLM
             concepts_data = []
@@ -227,10 +220,13 @@ class RAGService:
             )
             
             # Prepare rubric data (load from rubric_criteria if present)
-            rc_rows = session.execute(
-                text("SELECT * FROM rubric_criteria WHERE question_id = :qid"),
-                {"qid": question.id}
-            ).fetchall()
+            rc_rows = []
+            internal_qid = getattr(question, "id", None)
+            if internal_qid is not None:
+                rc_rows = session.execute(
+                    text("SELECT * FROM rubric_criteria WHERE question_id = :qid"),
+                    {"qid": internal_qid}
+                ).fetchall()
             if not rc_rows:
                 rubric_data = {
                     "subject": question.subject,
@@ -301,7 +297,7 @@ class RAGService:
             )
             params = {
                 "result_id": result_uuid,
-                "student_answer_id": student_answer.id,
+                "student_answer_id": sa_pk,
                 "total_score": total_score,
                 "max_possible_score": question.max_marks,
                 "percentage": percentage,
@@ -337,7 +333,7 @@ class RAGService:
                 points_awarded = concept_eval_data["accuracy_score"] * c.max_points
                 session.execute(text(
                     """
-                    INSERT INTO concept_evaluations (
+                    INSERT INTO Concept_Evaluations (
                         grading_result_id, key_concept_id, present, accuracy_score, points_awarded, points_possible,
                         explanation, evidence_text, reasoning, evaluated_at
                     ) VALUES (
@@ -393,8 +389,8 @@ class RAGService:
         rows = session.execute(text(
             """
             SELECT ce.*, kc.concept_name, kc.max_points
-            FROM concept_evaluations ce
-            INNER JOIN key_concepts kc ON ce.key_concept_id = kc.key_id
+            FROM Concept_Evaluations ce
+            INNER JOIN Question_KeyConcept kc ON ce.key_concept_id = kc.key_id
             WHERE ce.grading_result_id = :gid
             ORDER BY ce.id ASC
             """

@@ -234,8 +234,61 @@ class GradeService:
             raise RuntimeError("Database manager not available - this service is running in in-memory mode")
         return self.db_manager.get_session()
     
-##################################################    
+    
+#################### API related function
 
+    async def complete_grading_workflow(self, question_id: int, student_id: int) -> Dict[str, Any]:
+        """
+        Complete grading workflow as specified:
+        1. Retrieve ideal answer and marks
+        2. Extract and save key concepts (semantic understanding)
+        3. Retrieve student's submitted answer
+        4. Grade and save results
+        
+        Args:
+            question_id: Question identifier
+            student_id: Student identifier
+            
+        Returns:
+            Grading result in required format
+        """
+        from .rag_service import RAGService
+        
+        logger.info(f"Starting complete grading workflow for student {student_id}, question {question_id}")
+        
+        # Initialize RAG service
+        rag_service = RAGService(self.db_manager)
+        
+        # Step 1: Retrieve ideal answer and marks
+        question = await rag_service.get_question_with_ideal_answer(question_id)
+        if not question:
+            raise ValueError(f"Question {question_id} not found")
+        logger.info(f"grade_service -> get_question_with_ideal_answer: {question}")
+        
+        
+        # Step 2: Extract and save key concepts (semantic understanding)
+        key_concepts = await rag_service.extract_and_save_key_concepts(question)
+        if not key_concepts:
+            raise ValueError(f"Failed to extract key concepts for question {question_id}")
+        logger.info(f"grade_service -> extract_and_save_key_concepts: {key_concepts}")
+        
+        # Step 3: Retrieve student's submitted answer
+        student_answer = await rag_service.get_student_answer(student_id, question_id)
+        if not student_answer:
+            raise ValueError(f"Student answer not found for student {student_id}, question {question_id}")
+        logger.info(f"grade_service -> get_student_answer: {student_answer}")
+        
+        # Step 4: Grade and save results
+        result = await rag_service.grade_and_save_result(question, student_answer, key_concepts)
+        
+        logger.info(f"Completed grading workflow for student {student_id}: {result['Score']}")
+        return result
+    
+##################################################
+    
+    
+#################### Others function
+    
     async def grade_answer(
         self,
         student_answer: StudentAnswer,
@@ -521,48 +574,5 @@ class GradeService:
             total_failed=failed,
             total_processing_time_ms=total_time
         )
-
-    async def complete_grading_workflow(self, question_id: int, student_id: int) -> Dict[str, Any]:
-        """
-        Complete grading workflow as specified:
-        1. Retrieve ideal answer and marks
-        2. Extract and save key concepts (semantic understanding)
-        3. Retrieve student's submitted answer
-        4. Grade and save results
-        
-        Args:
-            question_id: Question identifier
-            student_id: Student identifier
-            
-        Returns:
-            Grading result in required format
-        """
-        from .rag_service import RAGService
-        
-        logger.info(f"Starting complete grading workflow for student {student_id}, question {question_id}")
-        
-        # Initialize RAG service
-        rag_service = RAGService(self.db_manager)
-        
-        # Step 1: Retrieve ideal answer and marks
-        question = rag_service.get_question_with_ideal_answer(question_id)
-        if not question:
-            raise ValueError(f"Question {question_id} not found")
-        
-        # Step 2: Extract and save key concepts (semantic understanding)
-        key_concepts = await rag_service.extract_and_save_key_concepts(question)
-        if not key_concepts:
-            raise ValueError(f"Failed to extract key concepts for question {question_id}")
-        
-        # Step 3: Retrieve student's submitted answer
-        student_answer = rag_service.get_student_answer(student_id, question_id)
-        if not student_answer:
-            raise ValueError(f"Student answer not found for student {student_id}, question {question_id}")
-        
-        # Step 4: Grade and save results
-        result = await rag_service.grade_and_save_result(question, student_answer, key_concepts)
-        
-        logger.info(f"Completed grading workflow for student {student_id}: {result['Score']}")
-        return result
 
 ##############################################

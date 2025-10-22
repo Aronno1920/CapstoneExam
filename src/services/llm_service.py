@@ -203,6 +203,7 @@ class LLMService:
         """Apply grading rubric to calculate final score and feedback"""
         rubric_str = json.dumps(rubric, indent=2)
         concept_evaluations_str = json.dumps(concept_evaluations, indent=2)
+        passing_threshold = rubric.get("passing_threshold", 60)
         
         prompt = PromptTemplates.GRADING_RUBRIC_APPLICATION.format(
             ideal_answer=ideal_answer,
@@ -211,7 +212,8 @@ class LLMService:
             concept_evaluations=concept_evaluations_str,
             semantic_similarity=semantic_analysis.get("overall_semantic_similarity", 0),
             coherence_score=semantic_analysis.get("coherence_score", 0),
-            completeness_score=semantic_analysis.get("completeness_score", 0)
+            completeness_score=semantic_analysis.get("completeness_score", 0),
+            passing_threshold_percent=passing_threshold
         )
         
         try:
@@ -253,7 +255,7 @@ class LLMService:
             raise LLMError(f"Failed to perform chain-of-thought grading: {e}")
     
     
-    async def _parse_json_response(self, response: str) -> Dict[str, Any]:
+    def _parse_json_response(self, response: str) -> Dict[str, Any]:
         """Parse JSON response with error handling"""
         try:
             # Remove any potential markdown formatting
@@ -286,7 +288,7 @@ class LLMService:
             "provider": settings.llm_provider,
             "model": settings.llm_model,
             "config": get_llm_config(settings.llm_model),
-            "connected": self.validate_connection() if self.provider else False
+            "connected": await self.validate_connection() if self.provider else False
         }
         
         # Add provider-specific information

@@ -86,7 +86,6 @@ def check_question_service():
             detail=f"Question service not available. Database init failed: {e}"
         )
 
-
 ################################################
 
 @router.get("/all")

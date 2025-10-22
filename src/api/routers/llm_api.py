@@ -7,7 +7,6 @@ import logging
 from typing import Dict, Any, List
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
 
 from ...models.schemas import (
     GradingRequest, GradingResponse, BatchGradingRequest, BatchGradingResponse,

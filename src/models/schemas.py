@@ -266,7 +266,7 @@ class KeyConcept(BaseModel):
 class IdealAnswer(BaseModel):
     """Model for ideal/reference answers"""
     id: Optional[str] = None
-    question_id: str = Field(..., description="Associated question identifier")
+    question_id: int = Field(..., description="Associated question identifier")
     content: str = Field(..., min_length=10, description="The ideal answer content")
     key_concepts: List[KeyConcept] = Field(default=[], description="Extracted key concepts")
     rubric: GradingRubric = Field(..., description="Grading rubric for this answer")
@@ -279,8 +279,8 @@ class IdealAnswer(BaseModel):
 class StudentAnswer(BaseModel):
     """Model for student submitted answers"""
     id: Optional[str] = None
-    student_id: str = Field(..., description="Student identifier")
-    question_id: str = Field(..., description="Associated question identifier")
+    student_id: int = Field(..., description="Student identifier")
+    question_id: int = Field(..., description="Associated question identifier")
     content: str = Field(..., min_length=1, max_length=2000, description="Student's answer")
     submitted_at: datetime = Field(default_factory=datetime.now)
     language: str = Field(default="en", description="Language of the answer")

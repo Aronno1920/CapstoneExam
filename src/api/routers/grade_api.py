@@ -8,7 +8,10 @@ from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from ...services.grade_service import GradeService
+from src.models.grade_model import GradingWorkflowRequest, GradingWorkflowResponse
+
+from src.services.grade_service import GradeService
+
 
 
 logger = logging.getLogger(__name__)
@@ -28,25 +31,6 @@ def set_database_services(grd_svc: GradeService):
     """Set question services from main application"""
     global grade_service
     grade_service = grd_svc
-
-
-# Request/Response Models
-class GradingWorkflowRequest(BaseModel):
-    """Request for complete MSSQL grading workflow"""
-    question_id: str
-    student_id: str
-
-
-class GradingWorkflowResponse(BaseModel):
-    """Response from MSSQL grading workflow"""
-    Score: str
-    Justification: str
-    Key_Concepts_Covered: List[str]
-    Percentage: str
-    Passed: bool
-    ProcessingTimeMs: float
-    ConfidenceScore: float
-    GradingResultId: str
 
 
 def check_question_service():
@@ -93,6 +77,7 @@ async def complete_grading_workflow(request: GradingWorkflowRequest) -> GradingW
         
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    
     except Exception as e:
         processing_time = (time.time() - start_time) * 1000
         logger.error(f"Grading workflow failed: {e}")
@@ -162,20 +147,3 @@ async def batch_grading_workflow(requests: List[GradingWorkflowRequest]) -> Dict
     }
 
 ############################################
-
-# @router.get("/students/{student_id}/results")
-# async def get_student_results(student_id: str) -> Dict[str, Any]:
-#     """Get all grading results for a student"""
-#     check_question_service()
-    
-#     try:
-#         results = grade_service.get_grading_results_by_student(student_id)
-#         return {
-#             "student_id": student_id,
-#             "results_count": len(results),
-#             "results": results
-#         }
-        
-#     except Exception as e:
-#         logger.error(f"Error retrieving results for student {student_id}: {e}")
-#         raise HTTPException(status_code=500, detail=str(e))
