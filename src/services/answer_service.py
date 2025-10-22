@@ -187,6 +187,97 @@ class AnswerService:
         finally:
             session.close()
     
+    async def submit_student_answer(self, student_id: int, question_id: int, answer_text: str, language: str = "en") -> StudentAnswer:
+        """Insert a new student answer and return the joined StudentAnswer model"""
+        if not answer_text or not str(answer_text).strip():
+            raise ValueError("answer_text is required")
+
+        session = self.get_session()
+        try:
+            # Ensure the question exists and fetch question details for response mapping
+            q_row = session.execute(text(
+                """
+                SELECT question_id, subject, topic, question_text, max_marks, passing_threshold
+                FROM Question_Bank
+                WHERE question_id = :qid
+                """
+            ), {"qid": question_id}).fetchone()
+            if not q_row:
+                raise ValueError(f"Question {question_id} not found")
+
+            # Compute word count
+            word_count = len(answer_text.split())
+
+            # Insert answer and get new answer_id
+            insert_sql = text(
+                """
+                INSERT INTO Student_Answers (student_id, question_id, answer_text, language, word_count, submitted_at)
+                OUTPUT INSERTED.answer_id
+                VALUES (:student_id, :question_id, :answer_text, :language, :word_count, GETUTCDATE())
+                """
+            )
+            inserted = session.execute(insert_sql, {
+                "student_id": student_id,
+                "question_id": question_id,
+                "answer_text": answer_text,
+                "language": language,
+                "word_count": word_count,
+            }).fetchone()
+            session.commit()
+
+            new_answer_id = inserted[0] if inserted else None
+
+            # Retrieve the full joined row as returned by other getters
+            row = session.execute(text(
+                """
+                SELECT a.answer_id,a.student_id,a.question_id,q.subject,q.topic,q.question_text,a.answer_text,a.language,a.word_count,q.max_marks,q.passing_threshold
+                FROM Student_Answers a
+                INNER JOIN Question_Bank q ON a.question_id = q.question_id
+                WHERE a.answer_id = :aid
+                """
+            ), {"aid": new_answer_id}).fetchone()
+
+            if not row:
+                # Fallback: construct from question + provided fields
+                m = q_row._mapping if hasattr(q_row, "_mapping") else q_row
+                return StudentAnswer(
+                    answer_id=new_answer_id or 0,
+                    student_id=student_id,
+                    question_id=question_id,
+                    subject=m["subject"],
+                    topic=m["topic"],
+                    question_text=m["question_text"],
+                    answer_text=answer_text,
+                    language=language,
+                    word_count=word_count,
+                    max_marks=m["max_marks"],
+                    passing_threshold=m["passing_threshold"],
+                )
+
+            m = row._mapping if hasattr(row, "_mapping") else row
+            result = StudentAnswer(
+                answer_id=m["answer_id"],
+                student_id=m["student_id"],
+                question_id=m["question_id"],
+                subject=m["subject"],
+                topic=m["topic"],
+                question_text=m["question_text"],
+                answer_text=m["answer_text"],
+                language=m["language"],
+                word_count=m["word_count"],
+                max_marks=m["max_marks"],
+                passing_threshold=m["passing_threshold"],
+            )
+            logger.info(f"Inserted student answer {result.answer_id} for student {student_id}, question {question_id}")
+            return result
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Error submitting student answer: {e}")
+            raise
+        finally:
+            session.close()
+    
     
     async def get_student_answers_by_student(self, student_id: int) -> List[StudentAnswer]:
         """Get all answers for a specific student"""
