@@ -134,6 +134,7 @@ class QuestionService:
                 "max_marks": max_marks,
                 "passing_threshold": passing_threshold,
             }).fetchone()
+            
             qid = row[0] if row else None
             sel = session.execute(text("SELECT * FROM Question_Bank WHERE question_id = :id"), {"id": qid}).fetchone()
             session.commit()
@@ -172,6 +173,7 @@ class QuestionService:
                 "language": language,
                 "word_count": wc,
             }).fetchone()
+            
             aid = row[0] if row else None
             sel = session.execute(text("SELECT * FROM Student_Answers WHERE id = :id"), {"id": aid}).fetchone()
             session.commit()
